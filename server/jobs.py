@@ -22,18 +22,42 @@ import sys
 import tempfile
 from pathlib import Path
 
-PIPELINE = Path(os.environ.get(
-    "STORE_SCOUT_PIPELINE",
-    Path(__file__).resolve().parents[2] / "cafe-trade-area" / "analysis"))
+def _find_pipeline() -> Path:
+    """analysis 디렉터리를 찾는다.
+
+    이 저장소는 알고리즘을 담지 않는다 — 원본은 jasons-company 한 곳에 둔다.
+    그래서 경로를 밖에서 받아야 하고, 흔한 배치 몇 가지는 알아서 찾아 준다.
+    못 찾으면 조용히 넘어가지 않고 available() 이 이유를 말한다.
+    """
+    env = os.environ.get("STORE_SCOUT_PIPELINE", "").strip()
+    if env:
+        return Path(env)
+    here = Path(__file__).resolve()
+    후보 = [
+        here.parents[2] / "jasons-company" / "cafe-trade-area" / "analysis",  # 나란히 클론
+        here.parents[3] / "jasons-company" / "cafe-trade-area" / "analysis",
+        here.parents[2] / "cafe-trade-area" / "analysis",   # 이관 전 한 저장소 안
+    ]
+    for c in 후보:
+        if (c / "review_sites.py").exists():
+            return c
+    return 후보[0]
+
+
+PIPELINE = _find_pipeline()
 
 TIMEOUT = int(os.environ.get("STORE_SCOUT_TIMEOUT", "600"))
 
 
 def available() -> tuple[bool, str]:
+    안내 = ("상권분석 저장소를 나란히 클론하거나 STORE_SCOUT_PIPELINE 로 경로를 "
+          "지정하십시오:\n"
+          "  git clone https://github.com/JasonSJo/jasons-company\n"
+          "  export STORE_SCOUT_PIPELINE=$PWD/jasons-company/cafe-trade-area/analysis")
     if not PIPELINE.exists():
-        return False, f"파이프라인 디렉터리가 없습니다: {PIPELINE}"
+        return False, f"파이프라인 디렉터리가 없습니다: {PIPELINE}\n{안내}"
     if not (PIPELINE / "review_sites.py").exists():
-        return False, f"review_sites.py 를 찾지 못했습니다: {PIPELINE}"
+        return False, f"review_sites.py 를 찾지 못했습니다: {PIPELINE}\n{안내}"
     return True, ""
 
 

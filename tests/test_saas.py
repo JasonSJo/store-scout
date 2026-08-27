@@ -56,7 +56,8 @@ def client_for(email: str) -> TestClient:
     return c
 
 
-SITES = (ROOT.parent / "cafe-trade-area" / "analysis" / "후보지.example.csv")
+# 예시 후보지 CSV 는 알고리즘 저장소에 있다. 없으면 그 테스트만 건너뛴다.
+SITES = jobs.PIPELINE / "후보지.example.csv"
 
 
 class TestTenancy(unittest.TestCase):

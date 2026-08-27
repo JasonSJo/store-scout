@@ -1,48 +1,41 @@
 # 출점심의 (store-scout)
 
 프랜차이즈 **운영팀·영업팀**을 위한 상권분석 구독 서비스. 조직 단위로
-[상권분석 알고리즘](../cafe-trade-area) M1~M6 을 돌리고 결과를 보관·통제한다.
+상권분석 알고리즘 M1~M6 을 돌리고 결과를 보관·통제한다.
 
 제품 정의(대상·요금제·팔 수 있는 것과 없는 것)는 **[PRODUCT.md](PRODUCT.md)**.
 
 ---
 
-## ⚠ 먼저 — 이 코드는 지금 공개 저장소에 있다
+## 알고리즘은 이 저장소에 없다
 
-`jasons-company` 는 **public** 이다. 상용 제품 코드가 여기 있을 이유가 없다.
-비공개 저장소를 만든 뒤 이 디렉터리만 들어내십시오. 커밋 이력까지 함께 간다.
+M1~M6 파이프라인의 원본은
+[jasons-company](https://github.com/JasonSJo/jasons-company) 의
+`cafe-trade-area/analysis` 한 곳에 둔다. 여기로 복사해 오면 원본이 둘이 되고,
+한쪽 계수를 고쳤을 때 다른 쪽이 조용히 어긋난다.
 
-```bash
-# 1. GitHub 에서 비공개 저장소 store-scout 생성 (이 세션에는 생성 권한이 없어 사람이 해야 합니다)
-
-# 2. 이 디렉터리만 이력째 분리
-git subtree split --prefix=store-scout -b store-scout-only
-
-# 3. 새 저장소로 보내기
-git push git@github.com:JasonSJo/store-scout.git store-scout-only:main
-
-# 4. 원본에서 제거
-git rm -r store-scout && git commit -m "출점심의를 비공개 저장소로 이관"
-```
-
-비밀은 코드에 없다 — 전부 환경변수다. 그래도 옮기기 전까지는 **데모 계정 외의
-실제 조직 데이터를 넣지 마십시오.**
+이 서비스는 그 디렉터리를 **서브프로세스로 부른다.** 경로는 자동으로 찾고
+(나란히 클론한 경우), 못 찾으면 `STORE_SCOUT_PIPELINE` 로 지정한다.
 
 ## 돌려보기
 
 ```bash
+# 알고리즘 저장소를 나란히 클론
+git clone https://github.com/JasonSJo/jasons-company ../jasons-company
+
 pip install -r requirements.txt
 python3 seed_demo.py                     # 데모 조직 + 계정 3개 (비밀번호 demo-1234)
 python3 -m uvicorn server.app:app --reload
 ```
 
 `http://127.0.0.1:8000` → `ops@cafehada.kr` / `demo-1234`
-후보지 CSV 는 `../cafe-trade-area/analysis/후보지.example.csv` 를 쓰면 된다.
+후보지 CSV 는 `../jasons-company/cafe-trade-area/analysis/후보지.example.csv` 를 쓰면 된다.
+`GET /healthz` 가 `pipeline=yes` 인지로 연결을 확인할 수 있다.
 
 | 환경변수 | 뜻 | 기본값 |
 |---|---|---|
 | `STORE_SCOUT_DB` | SQLite 경로 | `store-scout.sqlite3` |
-| `STORE_SCOUT_PIPELINE` | analysis 디렉터리 | `../cafe-trade-area/analysis` |
+| `STORE_SCOUT_PIPELINE` | analysis 디렉터리 | 나란히 클론한 jasons-company 에서 자동 탐색 |
 | `STORE_SCOUT_TIMEOUT` | 파이프라인 제한 시간(초) | `600` |
 | `STORE_SCOUT_HTTPS` | 값이 있으면 세션 쿠키에 `Secure` | (없음) |
 
@@ -76,8 +69,8 @@ python3 -m uvicorn server.app:app --reload
 - **작업 큐.** 지금은 FastAPI 백그라운드 태스크다. 프로세스가 죽으면 실행 중인
   분석이 '실행중' 에서 멈춘다. 여러 대로 늘리려면 큐(RQ·Celery 등)가 필요하다.
 - **속도 제한 · CSRF 토큰.** 폼은 `SameSite=Lax` 쿠키에 기대고 있다.
-- **입력·상담 화면 통합.** 지금은 `cafe-trade-area/input`, `consult` 가 별도 정적
-  페이지다. 조직 계정과 이어지면 CSV 를 손으로 옮기지 않아도 된다.
+- **입력·상담 화면 통합.** 지금은 jasons-company 의 `cafe-trade-area/input`,
+  `consult` 가 별도 정적 페이지다. 조직 계정과 이어지면 CSV 를 손으로 옮기지 않아도 된다.
 
 ## 테스트
 
