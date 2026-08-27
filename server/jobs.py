@@ -69,7 +69,8 @@ def count_sites(csv_text: str) -> int:
     return sum(1 for r in rows if (r.get("후보지명") or "").strip())
 
 
-def run(sites_csv: str, settings_yaml: str = "", coefficients_json: str = "") -> dict:
+def run(sites_csv: str, settings_yaml: str = "", coefficients_json: str = "",
+        stores_csv: str = "") -> dict:
     """후보지 CSV 한 벌을 심의한다. 성공/실패 모두 dict 로 돌려준다."""
     ok, why = available()
     if not ok:
@@ -88,6 +89,11 @@ def run(sites_csv: str, settings_yaml: str = "", coefficients_json: str = "") ->
         if coefficients_json:
             (work / "계수.json").write_text(coefficients_json, encoding="utf-8")
             cmd += ["--계수", str(work / "계수.json")]
+        # 조직 자신의 기존점을 넘긴다. 넘기지 않으면 파이프라인이 예시 파일을 집어
+        # 남의 브랜드 실적으로 이 조직의 매출을 추정한다 — 화면만 격리되고 판정은 섞인다.
+        if stores_csv:
+            (work / "기존점.csv").write_text(stores_csv, encoding="utf-8-sig")
+            cmd += ["--stores", str(work / "기존점.csv")]
 
         p = subprocess.run(cmd, capture_output=True, text=True, timeout=TIMEOUT,
                            cwd=str(PIPELINE))

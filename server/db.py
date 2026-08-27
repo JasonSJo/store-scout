@@ -81,6 +81,33 @@ CREATE TABLE IF NOT EXISTS audit (
 );
 CREATE INDEX IF NOT EXISTS ix_audit_org ON audit(org_id, at);
 
+-- 조직의 기존점 실매출. 이것이 없으면 M4 가 회귀도 앵커링도 못 한다 —
+-- 서비스가 성립하지 않는 유일한 필수 데이터다(PRODUCT.md 온보딩).
+CREATE TABLE IF NOT EXISTS stores (
+  id INTEGER PRIMARY KEY,
+  org_id INTEGER NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+  점포명 TEXT NOT NULL,
+  주소 TEXT NOT NULL DEFAULT '',
+  위도 REAL, 경도 REAL,
+  개점일 TEXT NOT NULL DEFAULT '',
+  기준점포 TEXT NOT NULL DEFAULT 'N',
+  월매출_만원 REAL,
+  좌석수 REAL, 층 REAL, 전면폭_m REAL, 주차가능대수 REAL,
+  전용면적_평 REAL, 월임대료_만원 REAL, 관리비_만원 REAL,
+  코너여부 TEXT NOT NULL DEFAULT 'N', 정차가능 TEXT NOT NULL DEFAULT 'N',
+  도로변 TEXT NOT NULL DEFAULT 'A', 방향적합 TEXT NOT NULL DEFAULT 'N',
+  계약조건점수 REAL,
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS ix_stores_org ON stores(org_id);
+
+-- 조직별 운영 설정(브랜드·변동비·고정비). 파이프라인의 설정.yaml 로 나간다.
+CREATE TABLE IF NOT EXISTS org_settings (
+  org_id INTEGER PRIMARY KEY REFERENCES orgs(id) ON DELETE CASCADE,
+  data TEXT NOT NULL DEFAULT '{}',
+  updated_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -119,7 +146,7 @@ def tx(path: Path | None = None):
 # org_id 를 빼먹을 수 없게 인자로 받는다. 아래를 거치지 않는 SELECT 는 두지 않는다.
 
 def rows_for_org(con, table: str, org_id: int, where: str = "", args=()) -> list[dict]:
-    if table not in ("batches", "runs", "users", "audit"):
+    if table not in ("batches", "runs", "users", "audit", "stores"):
         raise ValueError(f"허용되지 않은 테이블: {table}")
     sql = f"SELECT * FROM {table} WHERE org_id = ?"
     if where:

@@ -23,11 +23,16 @@ _TMP = tempfile.mkdtemp(prefix="scout-test-")
 os.environ["STORE_SCOUT_DB"] = str(Path(_TMP) / "t.sqlite3")
 
 from fastapi.testclient import TestClient       # noqa: E402
-from server import app as app_mod, auth, db, jobs, plans, views   # noqa: E402
+from server import app as app_mod, auth, db, jobs, orgdata, plans, views   # noqa: E402
 
 
-def seed():
-    """두 조직을 만든다 — 격리 검사의 전제."""
+def seed(onboard: bool = True):
+    """두 조직을 만든다 — 격리 검사의 전제.
+
+    onboard=True 면 온보딩까지 끝내 둔다(브랜드 + 실매출·좌표 있는 기존점 2곳 중
+    1곳이 기준점포). 온보딩이 끝나지 않은 조직은 심의를 돌릴 수 없으므로,
+    그 게이트를 검사하는 자리에서만 onboard=False 를 쓴다.
+    """
     db.DB_PATH = Path(os.environ["STORE_SCOUT_DB"])
     if db.DB_PATH.exists():
         db.DB_PATH.unlink()
@@ -45,6 +50,14 @@ def seed():
                     (org, f"{role}@{key.lower()}.kr", role, role,
                      auth.hash_pw("pw-1234"))).lastrowid
                 ids[key][role] = uid
+            if onboard:
+                orgdata.save_settings(con, org, orgdata.merge(
+                    orgdata.기본설정, {"브랜드": f"브랜드{key}"}))
+                for i, (점포, 기준) in enumerate([(f"{key}점1", "Y"), (f"{key}점2", "N")]):
+                    con.execute(
+                        "INSERT INTO stores (org_id,점포명,위도,경도,기준점포,월매출_만원,좌석수)"
+                        " VALUES (?,?,?,?,?,?,?)",
+                        (org, 점포, 37.5 + i * 0.01, 127.0 + i * 0.01, 기준, 3000 + i * 200, 24))
     return ids
 
 
@@ -58,6 +71,11 @@ def client_for(email: str) -> TestClient:
 
 # 예시 후보지 CSV 는 알고리즘 저장소에 있다. 없으면 그 테스트만 건너뛴다.
 SITES = jobs.PIPELINE / "후보지.example.csv"
+
+
+def csv_rows(text: str):
+    import csv, io
+    return csv.DictReader(io.StringIO(text.lstrip("\ufeff")))
 
 
 class TestTenancy(unittest.TestCase):
@@ -141,7 +159,7 @@ class TestPlanGating(unittest.TestCase):
         r = client_for("운영@a.kr").post(
             "/runs", data={"name": "초과"}, files={"sites": ("s.csv", csv, "text/csv")})
         self.assertEqual(r.status_code, 402)
-        self.assertIn("한도", r.json()["detail"])
+        self.assertIn("한도", r.text)
 
     def test_실패한_실행은_청구하지_않는다(self):
         os.environ["STORE_SCOUT_PIPELINE"] = "/없는/경로"
@@ -166,6 +184,7 @@ class TestPlanGating(unittest.TestCase):
         r = client_for("운영@a.kr").post(
             "/runs", data={"name": "빈것"}, files={"sites": ("s.csv", "후보지명\n\n", "text/csv")})
         self.assertEqual(r.status_code, 400)
+        self.assertIn("후보지명이 있는 행이 없습니다", r.text)
 
     def test_좌석_한도(self):
         self.assertTrue(plans.seat_check("team", 9)[0])
@@ -245,6 +264,264 @@ class TestAudit(unittest.TestCase):
         client_for("영업@a.kr")                    # A 조직에 로그인 기록 생성
         body = client_for("관리자@b.kr").get("/audit").text
         self.assertNotIn("영업@a.kr", body)
+
+
+class TestOnboarding(unittest.TestCase):
+    """온보딩이 끝나지 않은 조직은 심의를 돌릴 수 없다.
+
+    막지 않으면 파이프라인이 예시 기존점을 집어 **남의 브랜드 실적으로** 이 조직의
+    매출을 추정한다. 화면만 격리되고 판정은 섞이는, 가장 알아채기 어려운 사고다.
+    """
+
+    def test_기존점이_없으면_실행을_막고_무엇이_없는지_말한다(self):
+        ids = seed(onboard=False)
+        r = client_for("운영@a.kr").post(
+            "/runs", data={"name": "성급한것"},
+            files={"sites": ("s.csv", "후보지명\n가\n", "text/csv")})
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("온보딩", r.text)
+        with db.tx() as con:
+            self.assertEqual(db.rows_for_org(con, "runs", ids["A"]["org"]), [])
+
+    def test_readiness가_남은_일을_짚는다(self):
+        ids = seed(onboard=False)
+        with db.tx() as con:
+            r = orgdata.readiness(con, ids["A"]["org"])
+            self.assertFalse(r["준비됨"])
+            self.assertEqual([w for w, _, _ in r["할일"]], ["설정", "기존점"])
+            orgdata.save_settings(con, ids["A"]["org"], {"브랜드": "가맹A"})
+            con.execute("INSERT INTO stores (org_id,점포명,위도,경도,기준점포,월매출_만원)"
+                        " VALUES (?,?,?,?,?,?)",
+                        (ids["A"]["org"], "1호점", 37.5, 127.0, "N", 3000))
+            con.execute("INSERT INTO stores (org_id,점포명,위도,경도,기준점포,월매출_만원)"
+                        " VALUES (?,?,?,?,?,?)",
+                        (ids["A"]["org"], "2호점", 37.51, 127.01, "N", 3200))
+            r = orgdata.readiness(con, ids["A"]["org"])
+            # 좌표는 찼지만 기준점포가 없다 — Mode B 앵커링이 성립하지 않는다
+            self.assertFalse(r["준비됨"])
+            self.assertEqual(r["모드"], "—")
+            con.execute("UPDATE stores SET 기준점포='Y' WHERE 점포명='1호점'")
+            r = orgdata.readiness(con, ids["A"]["org"])
+            self.assertTrue(r["준비됨"])
+            self.assertEqual(r["모드"], "B(앵커링)")
+
+    def test_실매출_없는_기존점은_준비된_것으로_세지_않는다(self):
+        ids = seed(onboard=False)
+        with db.tx() as con:
+            for i in range(3):
+                con.execute("INSERT INTO stores (org_id,점포명,위도,경도,기준점포) "
+                            "VALUES (?,?,?,?,'Y')",
+                            (ids["A"]["org"], f"{i}호점", 37.5, 127.0))
+            r = orgdata.readiness(con, ids["A"]["org"])
+        self.assertEqual(r["기존점"], 3)
+        self.assertEqual(r["실매출"], 0)
+        self.assertFalse(r["준비됨"])
+
+
+class TestOrgData(unittest.TestCase):
+    """조직 자신의 숫자가 파이프라인 입력으로 나가는가."""
+
+    def setUp(self):
+        self.ids = seed()
+
+    def test_기존점CSV에_자기_조직만_들어간다(self):
+        with db.tx() as con:
+            a = orgdata.stores_csv(con, self.ids["A"]["org"])
+        self.assertIn("A점1", a)
+        self.assertNotIn("B점1", a)
+
+    def test_일매출은_월매출에서_나온다(self):
+        with db.tx() as con:
+            rows = list(csv_rows(orgdata.stores_csv(con, self.ids["A"]["org"])))
+        one = [r for r in rows if r["점포명"] == "A점1"][0]
+        self.assertEqual(float(one["월매출_만원"]), 3000.0)
+        self.assertEqual(float(one["일매출_만원"]), 100.0)
+
+    def test_설정YAML에_등급과_고지가_실린다(self):
+        with db.tx() as con:
+            y = orgdata.settings_yaml(con, self.ids["A"]["org"])
+        self.assertIn("사내 한정 · 대외 배포 금지", y)
+        self.assertIn("예상매출액 산정서", y)
+
+    def test_설정은_조직마다_따로다(self):
+        with db.tx() as con:
+            orgdata.save_settings(con, self.ids["A"]["org"], {"브랜드": "A만의브랜드"})
+            self.assertEqual(orgdata.load_settings(con, self.ids["A"]["org"])["브랜드"],
+                             "A만의브랜드")
+            self.assertEqual(orgdata.load_settings(con, self.ids["B"]["org"])["브랜드"],
+                             "브랜드B")
+
+
+class TestStoresPage(unittest.TestCase):
+    def setUp(self):
+        self.ids = seed()
+
+    def test_남의_기존점은_보이지도_지워지지도_않는다(self):
+        with db.tx() as con:
+            sid = con.execute("SELECT id FROM stores WHERE org_id=? AND 점포명='A점1'",
+                              (self.ids["A"]["org"],)).fetchone()["id"]
+        cb = client_for("운영@b.kr")
+        self.assertNotIn("A점1", cb.get("/stores").text)
+        self.assertEqual(cb.post(f"/stores/{sid}/delete").status_code, 404)
+        with db.tx() as con:                      # 404 를 받았지 지워지지 않았다
+            self.assertIsNotNone(
+                con.execute("SELECT 1 FROM stores WHERE id=?", (sid,)).fetchone())
+
+    def test_영업팀은_기존점을_고칠_수_없다(self):
+        c = client_for("영업@a.kr")
+        self.assertEqual(c.get("/stores").status_code, 200)      # 읽기는 된다
+        r = c.post("/stores", data={"점포명": "몰래", "월매출_만원": "3000",
+                                    "위도": "37.5", "경도": "127.0"})
+        self.assertEqual(r.status_code, 403)
+
+    def test_좌표나_실매출이_없으면_받지_않는다(self):
+        c = client_for("운영@a.kr")
+        없음 = c.post("/stores", data={"점포명": "좌표없음", "월매출_만원": "3000",
+                                     "위도": "", "경도": ""})
+        self.assertEqual(없음.status_code, 400)
+        self.assertIn("좌표", 없음.text)
+        매출없음 = c.post("/stores", data={"점포명": "매출없음", "월매출_만원": "",
+                                       "위도": "37.5", "경도": "127.0"})
+        self.assertEqual(매출없음.status_code, 400)
+        with db.tx() as con:
+            이름 = [r["점포명"] for r in db.rows_for_org(con, "stores", self.ids["A"]["org"])]
+        self.assertNotIn("좌표없음", 이름)
+        self.assertNotIn("매출없음", 이름)
+
+    def test_추가와_삭제가_감사에_남는다(self):
+        c = client_for("운영@a.kr")
+        c.post("/stores", data={"점포명": "3호점", "월매출_만원": "2800",
+                                "위도": "37.6", "경도": "127.1", "기준점포": "N"},
+               follow_redirects=False)
+        with db.tx() as con:
+            acts = [r["action"] for r in db.rows_for_org(con, "audit", self.ids["A"]["org"])]
+        self.assertIn("기존점 추가", acts)
+
+
+class TestSettingsPage(unittest.TestCase):
+    def setUp(self):
+        self.ids = seed()
+
+    def 폼(self, **over):
+        base = {"브랜드": "가맹A", "자사브랜드티어": "동일가격대", "좌석수_기본": "24",
+                "영업일수": "30", "원재료율": "0.35", "로열티율": "0.03",
+                "광고분담금율": "0.01", "기타변동비율": "0.022",
+                "고정인건비_월_만원": "620", "기타_월_만원": "170"}
+        return base | over
+
+    def test_변동비_합이_100퍼센트를_넘으면_저장하지_않는다(self):
+        """BEP = F ÷ (1 − v). v ≥ 1 이면 0 으로 나누거나 음수 BEP 가 조용히 통과가 된다."""
+        c = client_for("운영@a.kr")
+        r = c.post("/settings", data=self.폼(원재료율="0.9", 로열티율="0.2"))
+        self.assertEqual(r.status_code, 400)
+        with db.tx() as con:
+            st = orgdata.load_settings(con, self.ids["A"]["org"])
+        self.assertEqual(st["운영"]["변동비"]["원재료율"], 0.35)
+
+    def test_저장한_값이_다음_설정_화면과_YAML에_그대로_있다(self):
+        c = client_for("운영@a.kr")
+        r = c.post("/settings", data=self.폼(브랜드="새브랜드", 원재료율="0.31"))
+        self.assertEqual(r.status_code, 200)
+        with db.tx() as con:
+            st = orgdata.load_settings(con, self.ids["A"]["org"])
+            y = orgdata.settings_yaml(con, self.ids["A"]["org"])
+        self.assertEqual(st["브랜드"], "새브랜드")
+        self.assertEqual(st["운영"]["변동비"]["원재료율"], 0.31)
+        self.assertIn("새브랜드", y)
+
+    def test_영업팀은_설정을_바꿀_수_없다(self):
+        c = client_for("영업@a.kr")
+        self.assertEqual(c.get("/settings").status_code, 200)
+        self.assertEqual(c.post("/settings", data=self.폼()).status_code, 403)
+
+
+class TestTeamPage(unittest.TestCase):
+    def setUp(self):
+        self.ids = seed()
+
+    def test_좌석_한도를_넘겨_추가할_수_없다(self):
+        """starter 는 좌석 3개고 A 조직은 이미 3명이다."""
+        r = client_for("관리자@a.kr").post(
+            "/team", data={"email": "넷째@a.kr", "name": "넷", "role": "영업",
+                           "password": "pw-12345"})
+        self.assertEqual(r.status_code, 402)
+        self.assertIn("좌석", r.text)
+
+    def test_비활성화하면_세션이_끊긴다(self):
+        """안 끊으면 쿠키를 가진 브라우저가 계속 들어온다."""
+        영업 = client_for("영업@a.kr")
+        self.assertEqual(영업.get("/dashboard").status_code, 200)
+        client_for("관리자@a.kr").post(f"/team/{self.ids['A']['영업']}/toggle",
+                                    follow_redirects=False)
+        self.assertEqual(영업.get("/dashboard").status_code, 401)
+
+    def test_자기_계정은_비활성화하지_못한다(self):
+        관리 = client_for("관리자@a.kr")
+        r = 관리.post(f"/team/{self.ids['A']['관리자']}/toggle")
+        self.assertEqual(r.status_code, 400)
+        self.assertEqual(관리.get("/dashboard").status_code, 200)
+
+    def test_남의_조직_구성원은_404다(self):
+        r = client_for("관리자@a.kr").post(f"/team/{self.ids['B']['영업']}/toggle")
+        self.assertEqual(r.status_code, 404)
+        with db.tx() as con:
+            self.assertEqual(
+                con.execute("SELECT active FROM users WHERE id=?",
+                            (self.ids["B"]["영업"],)).fetchone()["active"], 1)
+
+    def test_관리자만_팀을_본다(self):
+        self.assertEqual(client_for("운영@a.kr").get("/team").status_code, 403)
+        self.assertEqual(client_for("관리자@a.kr").get("/team").status_code, 200)
+
+    def test_팀_화면에_남의_조직_사람이_없다(self):
+        body = client_for("관리자@a.kr").get("/team").text
+        self.assertNotIn("영업@b.kr", body)
+
+
+class TestPages(unittest.TestCase):
+    """새 화면들이 열리고, 열람 자리마다 등급이 붙는가."""
+
+    def setUp(self):
+        self.ids = seed()
+
+    def test_모든_화면이_열린다(self):
+        c = client_for("관리자@a.kr")
+        for path in ("/dashboard", "/runs", "/stores", "/settings", "/team", "/audit"):
+            self.assertEqual(c.get(path).status_code, 200, path)
+
+    def test_심의_목록에_등급이_붙는다(self):
+        self.assertIn("사내 한정 · 대외 배포 금지", client_for("영업@a.kr").get("/runs").text)
+
+    def test_후보지_상세는_org_밖이면_404다(self):
+        result = {"후보지": [{"이름": "가", "S": 61.2,
+                           "판정": {"판정": "보류", "사유": ["시세 대비 임대료 높음"],
+                                  "margin": 0.28, "BEP_만원": 1800},
+                           "매출": {"월매출_하한": 2600, "월매출_상한": 3400},
+                           "입력": {"주소": "서울시 어딘가"}, "경고": []}]}
+        with db.tx() as con:
+            b = con.execute("INSERT INTO batches (org_id,name,created_by,sites_csv,site_count)"
+                            " VALUES (?,?,?,?,?)",
+                            (self.ids["A"]["org"], "묶음", self.ids["A"]["운영"], "x", 1)).lastrowid
+            run = con.execute("INSERT INTO runs (org_id,batch_id,status,mode,result_json)"
+                              " VALUES (?,?,'완료','B',?)",
+                              (self.ids["A"]["org"], b,
+                               __import__("json").dumps(result, ensure_ascii=False))).lastrowid
+        ca, cb = client_for("영업@a.kr"), client_for("영업@b.kr")
+        good = ca.get(f"/runs/{run}/sites/0")
+        self.assertEqual(good.status_code, 200)
+        self.assertIn("시세 대비 임대료 높음", good.text)
+        self.assertEqual(ca.get(f"/runs/{run}/sites/9").status_code, 404)
+        self.assertEqual(cb.get(f"/runs/{run}/sites/0").status_code, 404)
+
+    def test_실행중인_심의는_스스로_새로_고친다(self):
+        with db.tx() as con:
+            b = con.execute("INSERT INTO batches (org_id,name,created_by,sites_csv,site_count)"
+                            " VALUES (?,?,?,?,?)",
+                            (self.ids["A"]["org"], "묶음", self.ids["A"]["운영"], "x", 1)).lastrowid
+            run = con.execute("INSERT INTO runs (org_id,batch_id,status) VALUES (?,?,'실행중')",
+                              (self.ids["A"]["org"], b)).lastrowid
+        body = client_for("영업@a.kr").get(f"/runs/{run}").text
+        self.assertIn('http-equiv="refresh"', body)
 
 
 class TestPipelineIsolation(unittest.TestCase):
