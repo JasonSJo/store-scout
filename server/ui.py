@@ -15,6 +15,7 @@
 from __future__ import annotations
 
 import html
+import re
 
 E = lambda s: html.escape(str(s if s is not None else ""))
 
@@ -202,6 +203,49 @@ input[type=file]{padding:8px;background:var(--soft);cursor:pointer}
 .step.todo{background:var(--warn-soft)}
 .step.todo .n,.step.todo .t{color:var(--warn)}
 
+/* ── 체크박스 · 칩 ─────────────────── */
+/* 파일 선택은 브라우저 기본 모양이라 혼자 튄다. 버튼 부분만 우리 버튼처럼 만든다 */
+input[type=file]{padding:8px 10px;background:var(--bg);cursor:pointer}
+input[type=file]::file-selector-button{font:inherit;font-size:13px;font-weight:550;
+  margin-right:11px;padding:6px 12px;border-radius:var(--r-sm);cursor:pointer;
+  border:1px solid var(--line-2);background:var(--soft);color:var(--ink)}
+input[type=file]::file-selector-button:hover{background:var(--sunken)}
+
+.check{display:flex;align-items:center;gap:8px;font-size:14px;color:var(--body);
+  cursor:pointer;line-height:1.4}
+.check input{width:16px;height:16px;accent-color:var(--pri);margin:0;flex:0 0 auto}
+.chips{display:flex;flex-wrap:wrap;gap:8px}
+.check.chip{border:1px solid var(--line-2);border-radius:999px;padding:7px 13px 7px 11px;
+  background:var(--bg);transition:border-color .13s,background .13s}
+.check.chip:hover{background:var(--sunken)}
+.check.chip:has(input:checked){border-color:var(--pri);background:var(--pri-soft);
+  color:var(--pri-ink);font-weight:550}
+.lb-t{font-weight:600;font-size:13.5px;color:var(--ink)}
+/* 긴 폼을 덩어리로 끊는 소제목 */
+h3.sec{margin:22px 0 12px;font-size:12px;font-weight:700;letter-spacing:.07em;
+  color:var(--mute);text-transform:none;padding-bottom:8px;
+  border-bottom:1px solid var(--line)}
+form > h3.sec:first-child{margin-top:0}
+
+/* ── 파이프라인 산출물(마크다운) ────── */
+.md{font-size:14px;color:var(--body);line-height:1.7}
+.md > :first-child{margin-top:0}
+.md h2,.md h3,.md h4,.md h5{margin:20px 0 8px;color:var(--ink);line-height:1.35}
+.md h2{font-size:17px}.md h3{font-size:15px}.md h4,.md h5{font-size:14px}
+.md p{margin:8px 0}
+.md ul{margin:8px 0;padding-left:19px}
+.md li{margin:3px 0}
+.md blockquote{margin:12px 0;padding:11px 15px;border-left:3px solid var(--line-2);
+  background:var(--soft);border-radius:0 var(--r-sm) var(--r-sm) 0;color:var(--mute);
+  font-size:13.5px}
+.md code{font-family:var(--mono);font-size:12.5px;background:var(--sunken);
+  padding:1px 5px;border-radius:4px}
+.md-table{overflow-x:auto;margin:12px 0;border:1px solid var(--line);
+  border-radius:var(--r-sm)}
+.md-table table{font-size:13.5px}
+.md-table thead th{padding:8px 13px}
+.md-table td{padding:9px 13px}
+
 /* 표 안에서 쓰는 버튼. .ghost 는 테두리가 없어 글자처럼 보인다 */
 .row-act{font-size:13px;padding:6px 11px}
 
@@ -257,8 +301,86 @@ FAVICON = ("%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%20
            "stroke-width='2.5'/%3E%3Ccircle%20cx='16'%20cy='16'%20r='2.5'%20fill='%23fff'/%3E"
            "%3C/svg%3E")
 
-NAV = [("/dashboard", "개요"), ("/runs", "심의"), ("/stores", "기존점"),
-       ("/settings", "설정"), ("/team", "팀")]
+def checkbox(name: str, label: str, checked: bool = False, *,
+             help_text: str = "", required: bool = False, value: str = "1") -> str:
+    fid = f"f-{name}"
+    hid = f"{fid}-help"
+    desc = f' aria-describedby="{hid}"' if help_text else ""
+    h = f'<div class="help" id="{hid}" style="margin-left:26px">{E(help_text)}</div>' if help_text else ""
+    return (f'<div class="field"><label class="check" for="{fid}">'
+            f'<input id="{fid}" name="{E(name)}" type="checkbox" value="{E(value)}"'
+            f'{" checked" if checked else ""}{" required" if required else ""}{desc}/>'
+            f'<span>{E(label)}</span></label>{h}</div>')
+
+
+def checks(name: str, label: str, options, chosen=(), *, help_text: str = "") -> str:
+    """같은 이름을 여럿 보내는 다중 선택. 고르지 않으면 그 조건으로 거르지 않는다."""
+    골라진 = {str(x) for x in (chosen or [])}
+    상자 = "".join(
+        f'<label class="check chip" for="f-{name}-{i}">'
+        f'<input id="f-{name}-{i}" name="{E(name)}" type="checkbox" value="{E(o)}"'
+        f'{" checked" if str(o) in 골라진 else ""}/><span>{E(o)}</span></label>'
+        for i, o in enumerate(options))
+    h = f'<div class="help">{E(help_text)}</div>' if help_text else ""
+    return (f'<div class="field"><div class="lb"><span class="lb-t">{E(label)}</span>'
+            f'<span class="opt">선택</span></div>'
+            f'<div class="chips">{상자}</div>{h}</div>')
+
+
+def md_to_html(md: str) -> str:
+    """파이프라인이 낸 마크다운을 화면에 싣는다.
+
+    범용 파서가 아니다 — 우리 파이프라인이 쓰는 문법(제목·인용·표·목록·강조)만
+    다룬다. 그 밖의 것은 문단으로 떨어진다. 어떤 경우에도 원문을 이스케이프한 뒤
+    태그를 만들므로, 산출물에 든 문자가 화면의 태그가 되지는 않는다.
+    """
+    def inline(t: str) -> str:
+        t = E(t)
+        t = re.sub(r"\*\*(.+?)\*\*", r"<b>\1</b>", t)
+        return re.sub(r"`([^`]+)`", r"<code>\1</code>", t)
+
+    out, 표, 목록 = [], [], []
+
+    def flush():
+        if 목록:
+            out.append("<ul>" + "".join(f"<li>{x}</li>" for x in 목록) + "</ul>")
+            목록.clear()
+        if 표:
+            머리, 몸 = 표[0], [r for r in 표[1:] if not set("-: |").issuperset(set("".join(r)))]
+            out.append('<div class="md-table"><table><thead><tr>'
+                       + "".join(f"<th>{c}</th>" for c in 머리) + "</tr></thead><tbody>"
+                       + "".join("<tr>" + "".join(f"<td>{c}</td>" for c in r) + "</tr>"
+                                 for r in 몸) + "</tbody></table></div>")
+            표.clear()
+
+    for raw in (md or "").splitlines():
+        line = raw.rstrip()
+        if line.startswith("|"):
+            표.append([inline(c.strip()) for c in line.strip("|").split("|")])
+            continue
+        if 표:
+            flush()
+        if not line.strip():
+            flush()
+            continue
+        if line.startswith("#"):
+            flush()
+            n = len(line) - len(line.lstrip("#"))
+            out.append(f"<h{min(n + 1, 5)}>{inline(line.lstrip('#').strip())}</h{min(n + 1, 5)}>")
+        elif line.startswith(">"):
+            flush()
+            out.append(f'<blockquote>{inline(line.lstrip("> ").strip())}</blockquote>')
+        elif line.lstrip().startswith(("- ", "* ")):
+            목록.append(inline(line.lstrip()[2:]))
+        else:
+            flush()
+            out.append(f"<p>{inline(line.strip())}</p>")
+    flush()
+    return f'<div class="md">{"".join(out)}</div>'
+
+
+NAV = [("/dashboard", "개요"), ("/consults", "상담"), ("/runs", "심의"),
+       ("/stores", "기존점"), ("/settings", "설정"), ("/team", "팀")]
 
 
 def layout(title: str, body: str, user: dict | None = None, *,

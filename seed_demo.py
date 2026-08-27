@@ -11,7 +11,7 @@
 import os, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from server import auth, db, orgdata
+from server import auth, consults, db, orgdata
 
 db.DB_PATH = Path(os.environ.get("STORE_SCOUT_DB", "store-scout.sqlite3"))
 db.DB_PATH.unlink(missing_ok=True)
@@ -43,9 +43,19 @@ with db.tx() as con:
             "전용면적_평,월임대료_만원) VALUES (?,?,?,?,?,?,?,?,?)",
             (org, 점포, lat, lon, 기준, 매출, 좌석, 면적, 임대))
 
+    # 데모 상담 하나. 이름·번호 모두 실재하지 않는 값이다(번호는 0000-0000).
+    con.execute(
+        "INSERT INTO consults (org_id,고객명,고객전화번호,거주지,근무지,동의,희망지역,"
+        "희망평수,희망상권,보증금_만원,권리금_만원,투자금형태,운영형태,메모,created_by)"
+        " VALUES (?,?,?,?,?,1,?,?,?,?,?,?,?,?,?)",
+        (org, "데모 고객", "010-0000-0000", "서울 강남구", "서울 중구",
+         "강남, 성수, 홍대", 20, "오피스, 메인", 9000, 9000,
+         "현금+대출", "오토", "데모 상담 기록 — 실재하지 않는 사람입니다", 1))
+
     준비 = orgdata.readiness(con, org)
 
 print(f"조직 {org} · 계정 3개 (비밀번호 demo-1234) → {db.DB_PATH}")
 print(f"기존점 {준비['기존점']}곳 · 매출 추정 모드 {준비['모드']} · "
       f"심의 실행 {'가능' if 준비['준비됨'] else '불가'}")
+print("상담 1건(데모 고객 — 실재하지 않는 사람)")
 print("※ 기존점 매출은 꾸며 낸 데모 값입니다. 실제 판단에 쓰지 마십시오.")

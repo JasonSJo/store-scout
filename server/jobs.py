@@ -69,9 +69,50 @@ def count_sites(csv_text: str) -> int:
     return sum(1 for r in rows if (r.get("후보지명") or "").strip())
 
 
+def _consult_step(work: Path, consult_json: str) -> dict:
+    """상담 조건을 심의 입력으로 옮긴다. 계산은 analysis/consult.py 가 한다 —
+    여기서 베껴 두면 화면이 말한 숫자와 파이프라인이 쓴 숫자가 갈라진다.
+
+    돌려주는 것: 걸러진 뒤의 sites.csv 와 설정.yaml 경로, 그리고 상담반영.md.
+    """
+    (work / "상담조건.json").write_text(consult_json, encoding="utf-8")
+    out = work / "consult"
+    p = subprocess.run(
+        [sys.executable, str(PIPELINE / "consult.py"),
+         "--상담", str(work / "상담조건.json"),
+         "--sites", str(work / "sites.csv"),
+         "--settings", str(work / "설정.yaml"),
+         "--outdir", str(out)],
+        capture_output=True, text=True, timeout=TIMEOUT, cwd=str(PIPELINE))
+    if p.returncode != 0:
+        return {"ok": False, "error": ("상담 조건 반영 실패\n"
+                                       + (p.stderr or p.stdout or "").strip()[-1500:])}
+    sites, 설정 = out / "sites.csv", out / "설정.yaml"
+    if not sites.exists():
+        return {"ok": False, "error": "상담 조건 반영 결과에 sites.csv 가 없습니다.\n"
+                                      + (p.stdout or "")[-800:]}
+    남은 = count_sites(sites.read_text(encoding="utf-8-sig"))
+    반영 = ((out / "상담반영.md").read_text(encoding="utf-8")
+          if (out / "상담반영.md").exists() else "")
+    if 남은 == 0:
+        # 조건에 맞춘다고 판정 기준을 낮추면 안 되므로, 여기서 멈추고 사람에게 넘긴다
+        return {"ok": False, "error":
+                "상담 조건으로 거르고 나니 남은 후보지가 없습니다. 희망 조건이 지금 "
+                "후보지 풀에 없는 조건이거나 후보지가 부족합니다 — 조건을 넓히거나 "
+                "후보지를 더 모아야 합니다. 조건에 맞추려고 판정 기준을 낮추지 "
+                "마십시오.\n\n" + 반영[-1500:]}
+    return {"ok": True, "sites": sites, "settings": 설정, "남은": 남은, "반영": 반영}
+
+
 def run(sites_csv: str, settings_yaml: str = "", coefficients_json: str = "",
-        stores_csv: str = "") -> dict:
-    """후보지 CSV 한 벌을 심의한다. 성공/실패 모두 dict 로 돌려준다."""
+        stores_csv: str = "", consult_json: str = "") -> dict:
+    """후보지 CSV 한 벌을 심의한다. 성공/실패 모두 dict 로 돌려준다.
+
+    consult_json 이 있으면 심의 앞에 상담 단계가 붙는다:
+    consult.py 가 조건으로 후보지를 거르고 설정(고정비)을 얹은 뒤, 그 결과를
+    review_sites.py 가 받는다. 상담의 개인정보는 여기까지 오지 않는다 —
+    consult_json 에는 조건만 담긴다(consults.조건_json).
+    """
     ok, why = available()
     if not ok:
         return {"ok": False, "error": why}
@@ -79,13 +120,25 @@ def run(sites_csv: str, settings_yaml: str = "", coefficients_json: str = "",
     work = Path(tempfile.mkdtemp(prefix="scout-"))
     try:
         (work / "sites.csv").write_text(sites_csv, encoding="utf-8-sig")
-        cmd = [sys.executable, str(PIPELINE / "review_sites.py"),
-               "--sites", str(work / "sites.csv"),
-               "--out", str(work / "심의표.md"),
-               "--json", str(work / "심의결과.json")]
+        sites_path, 반영 = work / "sites.csv", ""
         if settings_yaml:
             (work / "설정.yaml").write_text(settings_yaml, encoding="utf-8")
-            cmd += ["--settings", str(work / "설정.yaml")]
+        settings_path = (work / "설정.yaml") if settings_yaml else None
+
+        if consult_json:
+            if not settings_yaml:
+                return {"ok": False, "error": "상담 조건을 반영하려면 조직 설정이 필요합니다."}
+            step = _consult_step(work, consult_json)
+            if not step["ok"]:
+                return step
+            sites_path, settings_path, 반영 = step["sites"], step["settings"], step["반영"]
+
+        cmd = [sys.executable, str(PIPELINE / "review_sites.py"),
+               "--sites", str(sites_path),
+               "--out", str(work / "심의표.md"),
+               "--json", str(work / "심의결과.json")]
+        if settings_path:
+            cmd += ["--settings", str(settings_path)]
         if coefficients_json:
             (work / "계수.json").write_text(coefficients_json, encoding="utf-8")
             cmd += ["--계수", str(work / "계수.json")]
@@ -110,6 +163,7 @@ def run(sites_csv: str, settings_yaml: str = "", coefficients_json: str = "",
             "result": result,
             "report": report_path.read_text(encoding="utf-8") if report_path.exists() else "",
             "mode": result.get("모드", ""),
+            "상담반영": 반영,
             "stdout": (p.stdout or "").strip()[-2000:],
         }
     except subprocess.TimeoutExpired:

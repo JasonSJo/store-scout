@@ -19,7 +19,7 @@ from fastapi import (BackgroundTasks, Depends, FastAPI, File, Form, HTTPExceptio
                      Request, UploadFile)
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 
-from . import auth, db, jobs, orgdata, plans, views
+from . import auth, consults, db, jobs, orgdata, plans, views
 
 COOKIE = "scout_session"
 등급 = "사내 한정 · 대외 배포 금지"
@@ -119,22 +119,26 @@ def dashboard(request: Request, user=Depends(current_user), con=Depends(_con)):
 
 
 # ── 심의 ──────────────────────────────────────────────
-def _runs_html(con, user, msg: str = "", status: int = 200) -> HTMLResponse:
+def _runs_html(con, user, msg: str = "", status: int = 200,
+               고른상담=None) -> HTMLResponse:
     runs = db.rows_for_org(con, "runs", user["org_id"])
     batches = {b["id"]: b for b in db.rows_for_org(con, "batches", user["org_id"])}
+    상담 = db.rows_for_org(con, "consults", user["org_id"])
     return HTMLResponse(
-        views.runs_page(user, runs, batches, orgdata.readiness(con, user["org_id"]), msg),
+        views.runs_page(user, runs, batches, orgdata.readiness(con, user["org_id"]),
+                        msg, 상담, 고른상담),
         status_code=status)
 
 
 @app.get("/runs", response_class=HTMLResponse)
-def list_runs(user=Depends(current_user), con=Depends(_con)):
-    return _runs_html(con, user)
+def list_runs(consult: str = "", user=Depends(current_user), con=Depends(_con)):
+    return _runs_html(con, user, 고른상담=consult)
 
 
 @app.post("/runs")
 async def create_run(request: Request, background: BackgroundTasks,
-                     name: str = Form(""), sites: UploadFile = File(...),
+                     name: str = Form(""), consult_id: str = Form(""),
+                     sites: UploadFile = File(...),
                      user=Depends(current_user), con=Depends(_con)):
     require_role(user, plans.CAN_RUN)
     org = org_of(con, user)
@@ -154,6 +158,14 @@ async def create_run(request: Request, background: BackgroundTasks,
     if not ok:
         return _runs_html(con, user, why, 402)
 
+    # 상담을 붙이면 조건이 후보지를 거르고 고정비를 바꾼다. 개인정보는 넘기지 않는다 —
+    # consults.조건_json 이 조건키만 골라 담는다.
+    상담 = None
+    if consult_id.strip():
+        상담 = db.row_for_org(con, "consults", user["org_id"], int(consult_id))
+        if not 상담:
+            raise HTTPException(404, "없는 상담입니다")
+
     cur = con.execute(
         "INSERT INTO batches (org_id, name, created_by, sites_csv, site_count) "
         "VALUES (?,?,?,?,?)",
@@ -161,10 +173,12 @@ async def create_run(request: Request, background: BackgroundTasks,
          user["id"], raw, units))
     batch_id = cur.lastrowid
     cur = con.execute(
-        "INSERT INTO runs (org_id, batch_id, status, billed_units) VALUES (?,?,?,?)",
-        (user["org_id"], batch_id, "실행중", units))
+        "INSERT INTO runs (org_id, batch_id, status, billed_units, consult_id) "
+        "VALUES (?,?,?,?,?)",
+        (user["org_id"], batch_id, "실행중", units, 상담["id"] if 상담 else None))
     run_id = cur.lastrowid
-    db.log(con, user["org_id"], user["id"], "실행", f"run:{run_id}", f"{units}건")
+    db.log(con, user["org_id"], user["id"], "실행", f"run:{run_id}",
+           f"{units}건" + (f" · 상담 {상담['id']}" if 상담 else ""))
     con.commit()
 
     # 파이프라인은 응답을 붙잡고 돌리지 않는다. 후보지가 몇 곳이면 몇 초지만
@@ -172,21 +186,27 @@ async def create_run(request: Request, background: BackgroundTasks,
     # 응답은 바로 주고 결과 화면이 상태를 따라간다.
     background.add_task(_execute, run_id, user["org_id"], raw,
                         orgdata.settings_yaml(con, user["org_id"]),
-                        orgdata.stores_csv(con, user["org_id"]))
+                        orgdata.stores_csv(con, user["org_id"]),
+                        consults.조건_json(상담) if 상담 else "")
     return RedirectResponse(f"/runs/{run_id}", status_code=303)
 
 
 def _execute(run_id: int, org_id: int, sites_csv: str,
-             settings_yaml: str, stores_csv: str) -> None:
+             settings_yaml: str, stores_csv: str, consult_json: str = "") -> None:
     """백그라운드 실행. 자기 연결을 새로 연다 — 요청 연결은 이미 닫혔다."""
-    out = jobs.run(sites_csv, settings_yaml=settings_yaml, stores_csv=stores_csv)
+    out = jobs.run(sites_csv, settings_yaml=settings_yaml, stores_csv=stores_csv,
+                   consult_json=consult_json)
     with db.tx() as con:
         if out["ok"]:
+            # 청구는 **실제로 심의한 후보지 수**로 바로잡는다. 상담 조건으로 걸러진
+            # 물건은 심의에 올라오지 않았으니 청구하지 않는다.
+            심의한 = len((out["result"] or {}).get("후보지") or [])
             con.execute(
                 "UPDATE runs SET status='완료', mode=?, result_json=?, report_md=?, "
-                "finished_at=datetime('now') WHERE id=? AND org_id=?",
+                "consult_md=?, billed_units=?, finished_at=datetime('now') "
+                "WHERE id=? AND org_id=?",
                 (out["mode"], json.dumps(out["result"], ensure_ascii=False),
-                 out["report"], run_id, org_id))
+                 out["report"], out.get("상담반영", ""), 심의한, run_id, org_id))
         else:
             # 실패는 청구하지 않는다
             con.execute(
@@ -202,8 +222,10 @@ def view_run(run_id: int, user=Depends(current_user), con=Depends(_con)):
         raise HTTPException(404, "없는 분석입니다")   # 남의 org 자원도 404
     batch = db.row_for_org(con, "batches", user["org_id"], run["batch_id"]) or {}
     summary = jobs.summarize(json.loads(run["result_json"])) if run["result_json"] else None
+    상담 = (db.row_for_org(con, "consults", user["org_id"], run["consult_id"])
+          if run["consult_id"] else None)
     db.log(con, user["org_id"], user["id"], "열람", f"run:{run_id}")
-    return HTMLResponse(views.run_page(user, run, batch, summary))
+    return HTMLResponse(views.run_page(user, run, batch, summary, 상담))
 
 
 @app.get("/runs/{run_id}/sites/{idx}", response_class=HTMLResponse)
@@ -230,6 +252,91 @@ def download_report(run_id: int, user=Depends(current_user), con=Depends(_con)):
         run["report_md"], media_type="text/markdown; charset=utf-8",
         headers={"Content-Disposition":
                  f'attachment; filename="internal-review-{run_id}.md"'})
+
+
+# ── 상담 ──────────────────────────────────────────────
+# 개인정보가 들어오는 유일한 자리다. 동의 없이 저장하지 않고, 연락처 전체 열람은
+# 감사 로그에 '개인정보 열람' 으로 따로 남기며, 심의로는 조건만 넘긴다.
+def _consults_html(con, user, msg: str = "", err: str = "",
+                   status: int = 200) -> HTMLResponse:
+    rows = db.rows_for_org(con, "consults", user["org_id"])
+    return HTMLResponse(
+        views.consults_page(user, rows, orgdata.load_settings(con, user["org_id"]), msg, err),
+        status_code=status)
+
+
+@app.get("/consults", response_class=HTMLResponse)
+def list_consults(user=Depends(current_user), con=Depends(_con)):
+    return _consults_html(con, user)
+
+
+@app.post("/consults", response_class=HTMLResponse)
+def add_consult(고객명: str = Form(...), 고객전화번호: str = Form(""),
+                거주지: str = Form(""), 근무지: str = Form(""), 동의: str = Form(""),
+                희망지역: str = Form(""), 희망평수: str = Form(""),
+                희망상권: list[str] = Form(default=[]),
+                보증금_만원: str = Form(""), 권리금_만원: str = Form(""),
+                투자금형태: str = Form(""), 운영형태: str = Form(""),
+                메모: str = Form(""),
+                user=Depends(current_user), con=Depends(_con)):
+    이름 = 고객명.strip()
+    if not 이름:
+        return _consults_html(con, user, err="고객명을 넣으십시오.", status=400)
+    if not 동의.strip():
+        # 브라우저의 required 는 우회할 수 있다. 개인정보는 서버에서도 막는다.
+        return _consults_html(con, user, err="개인정보 수집·이용 동의를 받아야 저장할 수 "
+                              "있습니다. 동의 없이 연락처를 남기지 마십시오.", status=400)
+    if not 고객전화번호.strip():
+        return _consults_html(con, user, err="연락처를 넣으십시오.", status=400)
+
+    st = orgdata.load_settings(con, user["org_id"])
+    for 이름표, 값, 표 in [("투자금 형태", 투자금형태, st.get("투자금형태") or {}),
+                       ("운영 형태", 운영형태, st.get("운영형태") or {})]:
+        if 값.strip() and 값.strip() not in 표:
+            # 표에 없는 값은 파이프라인이 조용히 무시한다. 저장 전에 막는 게 낫다.
+            return _consults_html(con, user, err=f"설정에 {이름표} '{값}' 가 없습니다.",
+                                  status=400)
+
+    고른상권 = [x for x in 희망상권 if x in consults.상권유형]
+    cur = con.execute(
+        "INSERT INTO consults (org_id, 고객명, 고객전화번호, 거주지, 근무지, 동의, "
+        "희망지역, 희망평수, 희망상권, 보증금_만원, 권리금_만원, 투자금형태, 운영형태, "
+        "메모, created_by) VALUES (?,?,?,?,?,1,?,?,?,?,?,?,?,?,?)",
+        (user["org_id"], 이름, 고객전화번호.strip(), 거주지.strip(), 근무지.strip(),
+         ", ".join(consults.split_list(희망지역)), _num(희망평수),
+         ", ".join(고른상권), _num(보증금_만원), _num(권리금_만원),
+         투자금형태.strip(), 운영형태.strip(), 메모.strip(), user["id"]))
+    # 감사 로그에 고객명을 남기지 않는다 — 로그는 관리자 전원이 본다
+    db.log(con, user["org_id"], user["id"], "상담 등록", f"consult:{cur.lastrowid}")
+    con.commit()
+    return RedirectResponse("/consults", status_code=303)
+
+
+@app.get("/consults/{consult_id}", response_class=HTMLResponse)
+def view_consult(consult_id: int, user=Depends(current_user), con=Depends(_con)):
+    row = db.row_for_org(con, "consults", user["org_id"], consult_id)
+    if not row:
+        raise HTTPException(404, "없는 상담입니다")
+    runs = db.rows_for_org(con, "runs", user["org_id"], "consult_id = ?", (consult_id,))
+    batches = {b["id"]: b for b in db.rows_for_org(con, "batches", user["org_id"])}
+    # 이 화면은 연락처 전체를 보여 준다. 목록의 '열람' 과 구분해서 남긴다.
+    db.log(con, user["org_id"], user["id"], "개인정보 열람", f"consult:{consult_id}")
+    return HTMLResponse(views.consult_page(
+        user, row, orgdata.load_settings(con, user["org_id"]), runs, batches))
+
+
+@app.post("/consults/{consult_id}/delete")
+def delete_consult(consult_id: int, user=Depends(current_user), con=Depends(_con)):
+    row = db.row_for_org(con, "consults", user["org_id"], consult_id)
+    if not row:
+        raise HTTPException(404, "없는 상담입니다")
+    con.execute("DELETE FROM consults WHERE id = ? AND org_id = ?",
+                (consult_id, user["org_id"]))
+    # 상담이 파기돼도 심의는 남는다(runs.consult_id 는 NULL 이 된다).
+    # 심의 결과에 개인정보가 없으므로 함께 지울 이유가 없다.
+    db.log(con, user["org_id"], user["id"], "상담 파기", f"consult:{consult_id}")
+    con.commit()
+    return RedirectResponse("/consults", status_code=303)
 
 
 # ── 기존점 ────────────────────────────────────────────

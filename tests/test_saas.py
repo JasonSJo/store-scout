@@ -10,6 +10,7 @@
 """
 from __future__ import annotations
 
+import json
 import os
 import sys
 import tempfile
@@ -23,7 +24,8 @@ _TMP = tempfile.mkdtemp(prefix="scout-test-")
 os.environ["STORE_SCOUT_DB"] = str(Path(_TMP) / "t.sqlite3")
 
 from fastapi.testclient import TestClient       # noqa: E402
-from server import app as app_mod, auth, db, jobs, orgdata, plans, views   # noqa: E402
+from server import (app as app_mod, auth, consults, db, jobs, orgdata,   # noqa: E402
+                    plans, views)
 
 
 def seed(onboard: bool = True):
@@ -522,6 +524,205 @@ class TestPages(unittest.TestCase):
                               (self.ids["A"]["org"], b)).lastrowid
         body = client_for("영업@a.kr").get(f"/runs/{run}").text
         self.assertIn('http-equiv="refresh"', body)
+
+
+class TestConsultPrivacy(unittest.TestCase):
+    """상담은 이 제품에서 개인정보가 들어오는 유일한 자리다.
+
+    여기서 지키지 못하면 나머지 경계선은 의미가 없다.
+    """
+
+    def setUp(self):
+        self.ids = seed()
+        self.폼 = {"고객명": "홍길동", "고객전화번호": "010-1234-5678", "동의": "1",
+                  "거주지": "서울 강남구", "근무지": "서울 중구",
+                  "희망지역": "강남, 성수", "희망평수": "20",
+                  "희망상권": ["오피스", "메인"], "보증금_만원": "9000",
+                  "권리금_만원": "9000", "투자금형태": "현금+대출", "운영형태": "오토",
+                  "메모": "2월 개점 희망"}
+
+    def 등록(self, c=None, **over):
+        c = c or client_for("영업@a.kr")
+        r = c.post("/consults", data={**self.폼, **over}, follow_redirects=False)
+        return r
+
+    def test_동의_없이는_저장하지_않는다(self):
+        """브라우저의 required 는 우회할 수 있다. 서버에서도 막아야 한다."""
+        r = self.등록(동의="")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("동의", r.text)
+        with db.tx() as con:
+            self.assertEqual(db.rows_for_org(con, "consults", self.ids["A"]["org"]), [])
+
+    def test_목록에는_연락처가_가려진다(self):
+        self.등록()
+        body = client_for("영업@a.kr").get("/consults").text
+        self.assertNotIn("010-1234-5678", body)
+        self.assertIn("5678", body)          # 뒤 네 자리로 사람을 알아본다
+
+    def test_개인정보_열람은_따로_기록된다(self):
+        self.등록()
+        with db.tx() as con:
+            cid = db.rows_for_org(con, "consults", self.ids["A"]["org"])[0]["id"]
+        detail = client_for("영업@a.kr").get(f"/consults/{cid}")
+        self.assertEqual(detail.status_code, 200)
+        self.assertIn("010-1234-5678", detail.text)      # 상세에서는 전체를 본다
+        with db.tx() as con:
+            acts = [r["action"] for r in db.rows_for_org(con, "audit", self.ids["A"]["org"])]
+        self.assertIn("개인정보 열람", acts)
+
+    def test_감사_로그에_고객명을_남기지_않는다(self):
+        """감사 로그는 관리자 전원이 본다. 여기에까지 이름을 퍼뜨리지 않는다."""
+        self.등록()
+        body = client_for("관리자@a.kr").get("/audit").text
+        self.assertNotIn("홍길동", body)
+
+    def test_심의로는_조건만_간다(self):
+        """조건_json 에 개인정보 키가 하나라도 들어가면 파이프라인과 심의표로 샌다."""
+        self.등록()
+        with db.tx() as con:
+            row = db.rows_for_org(con, "consults", self.ids["A"]["org"])[0]
+        payload = consults.조건_json(row)
+        for k in consults.개인정보키:
+            self.assertNotIn(k, payload, k)
+        for v in ("홍길동", "010-1234-5678", "서울 강남구", "서울 중구", "2월 개점 희망"):
+            self.assertNotIn(v, payload, v)
+        cond = json.loads(payload)["조건"]
+        self.assertEqual(set(cond), set(consults.조건키))
+
+    def test_남의_조직_상담은_보이지도_지워지지도_않는다(self):
+        self.등록()
+        with db.tx() as con:
+            cid = db.rows_for_org(con, "consults", self.ids["A"]["org"])[0]["id"]
+        cb = client_for("영업@b.kr")
+        self.assertNotIn("홍길동", cb.get("/consults").text)
+        self.assertEqual(cb.get(f"/consults/{cid}").status_code, 404)
+        self.assertEqual(cb.post(f"/consults/{cid}/delete").status_code, 404)
+        with db.tx() as con:
+            self.assertIsNotNone(
+                con.execute("SELECT 1 FROM consults WHERE id=?", (cid,)).fetchone())
+
+    def test_보관기간이_지나면_파기_대상으로_표시한다(self):
+        self.등록()
+        with db.tx() as con:
+            row = dict(db.rows_for_org(con, "consults", self.ids["A"]["org"])[0])
+            st = orgdata.load_settings(con, self.ids["A"]["org"])
+        row["created_at"] = "2020-01-01 00:00:00"
+        상태 = consults.보관상태(row, st)
+        self.assertTrue(상태["만료됨"])
+        self.assertEqual(상태["보관개월"], 12)
+
+    def test_설정에_없는_형태는_저장하지_않는다(self):
+        """파이프라인이 조용히 무시하고 넘어가는 값이다. 저장 전에 막는다."""
+        r = self.등록(운영형태="점주+로봇")
+        self.assertEqual(r.status_code, 400)
+        self.assertIn("운영 형태", r.text)
+
+    def test_상담을_파기해도_심의는_남는다(self):
+        self.등록()
+        with db.tx() as con:
+            cid = db.rows_for_org(con, "consults", self.ids["A"]["org"])[0]["id"]
+            b = con.execute("INSERT INTO batches (org_id,name,created_by,sites_csv,site_count)"
+                            " VALUES (?,?,?,?,?)",
+                            (self.ids["A"]["org"], "묶음", self.ids["A"]["운영"], "x", 1)).lastrowid
+            run = con.execute("INSERT INTO runs (org_id,batch_id,status,consult_id)"
+                              " VALUES (?,?,'완료',?)",
+                              (self.ids["A"]["org"], b, cid)).lastrowid
+        client_for("영업@a.kr").post(f"/consults/{cid}/delete", follow_redirects=False)
+        with db.tx() as con:
+            got = db.row_for_org(con, "runs", self.ids["A"]["org"], run)
+        self.assertIsNotNone(got)                 # 심의는 남고
+        self.assertIsNone(got["consult_id"])      # 연결만 끊긴다
+
+
+class TestConsultToJudgment(unittest.TestCase):
+    """상담 조건이 판정에 닿는 경로. 알고리즘과 필터를 갈라 둔 것이 지켜지는가."""
+
+    def setUp(self):
+        self.ids = seed()
+
+    def 상담넣기(self, **over):
+        base = {"고객명": "김상담", "고객전화번호": "010-0000-0000", "동의": 1,
+                "희망지역": "", "희망평수": None, "희망상권": "",
+                "보증금_만원": 9000, "권리금_만원": 9000,
+                "투자금형태": "현금+대출", "운영형태": "오토"}
+        v = {**base, **over}
+        with db.tx() as con:
+            return con.execute(
+                "INSERT INTO consults (org_id,고객명,고객전화번호,동의,희망지역,희망평수,"
+                "희망상권,보증금_만원,권리금_만원,투자금형태,운영형태,created_by)"
+                " VALUES (?,?,?,?,?,?,?,?,?,?,?,?)",
+                (self.ids["A"]["org"], v["고객명"], v["고객전화번호"], v["동의"],
+                 v["희망지역"], v["희망평수"], v["희망상권"], v["보증금_만원"],
+                 v["권리금_만원"], v["투자금형태"], v["운영형태"],
+                 self.ids["A"]["운영"])).lastrowid
+
+    def test_반영예고가_고정비_변화를_말한다(self):
+        cid = self.상담넣기()
+        with db.tx() as con:
+            row = db.row_for_org(con, "consults", self.ids["A"]["org"], cid)
+            st = orgdata.load_settings(con, self.ids["A"]["org"])
+        예고 = dict(consults.반영예고(row, st))
+        self.assertIn("620", 예고["고정인건비"])      # 기본값에서
+        self.assertIn("980", 예고["고정인건비"])      # 오토로
+        self.assertIn("금융비용", " ".join(예고))
+
+    def test_남의_조직_상담을_붙여_돌릴_수_없다(self):
+        cid = self.상담넣기()
+        r = client_for("운영@b.kr").post(
+            "/runs", data={"name": "남의상담", "consult_id": str(cid)},
+            files={"sites": ("s.csv", "후보지명\n가\n", "text/csv")})
+        self.assertEqual(r.status_code, 404)
+
+    @unittest.skipUnless(SITES.exists(), "파이프라인 예시 CSV 없음")
+    def test_상담_조건이_후보지를_거르고_고정비를_바꾼다(self):
+        with db.tx() as con:
+            row = db.row_for_org(con, "consults", self.ids["A"]["org"],
+                                 self.상담넣기(희망지역="강남, 홍대, 성수", 희망평수=20,
+                                           희망상권="오피스, 메인"))
+            sy = orgdata.settings_yaml(con, self.ids["A"]["org"])
+        sites = SITES.read_text(encoding="utf-8-sig")
+
+        민 = jobs.run(sites, settings_yaml=sy)
+        걸린 = jobs.run(sites, settings_yaml=sy, consult_json=consults.조건_json(row))
+        self.assertTrue(민["ok"], 민.get("error", "")[:300])
+        self.assertTrue(걸린["ok"], 걸린.get("error", "")[:300])
+
+        # 필터는 목록에서 뺀다 — 점수를 깎는 게 아니다
+        self.assertLess(len(걸린["result"]["후보지"]), len(민["result"]["후보지"]))
+        self.assertIn("제외", 걸린["상담반영"])
+
+        # 알고리즘은 고정비로 닿는다 — 같은 후보지의 BEP 가 올라가야 한다
+        민BEP = {s["이름"]: s["판정"]["BEP_만원"] for s in 민["result"]["후보지"]}
+        for s in 걸린["result"]["후보지"]:
+            self.assertGreater(s["판정"]["BEP_만원"], 민BEP[s["이름"]], s["이름"])
+
+    @unittest.skipUnless(SITES.exists(), "파이프라인 예시 CSV 없음")
+    def test_조건이_너무_좁으면_판정_기준을_낮추는_대신_멈춘다(self):
+        with db.tx() as con:
+            row = db.row_for_org(con, "consults", self.ids["A"]["org"],
+                                 self.상담넣기(희망지역="울릉도"))
+            sy = orgdata.settings_yaml(con, self.ids["A"]["org"])
+        out = jobs.run(SITES.read_text(encoding="utf-8-sig"),
+                       settings_yaml=sy, consult_json=consults.조건_json(row))
+        self.assertFalse(out["ok"])
+        self.assertIn("남은 후보지가 없습니다", out["error"])
+
+    @unittest.skipUnless(SITES.exists(), "파이프라인 예시 CSV 없음")
+    def test_걸러진_후보지는_청구하지_않는다(self):
+        cid = self.상담넣기(희망지역="강남, 홍대, 성수", 희망평수=20)
+        r = client_for("운영@a.kr").post(
+            "/runs", data={"name": "상담심의", "consult_id": str(cid)},
+            files={"sites": ("s.csv", SITES.read_text(encoding="utf-8-sig"), "text/csv")},
+            follow_redirects=False)
+        self.assertEqual(r.status_code, 303)
+        with db.tx() as con:
+            run = db.rows_for_org(con, "runs", self.ids["A"]["org"])[0]
+        self.assertEqual(run["status"], "완료", run["error"][:300])
+        올린수 = jobs.count_sites(SITES.read_text(encoding="utf-8-sig"))
+        self.assertLess(run["billed_units"], 올린수)
+        self.assertEqual(run["billed_units"], len(json.loads(run["result_json"])["후보지"]))
+        self.assertTrue(run["consult_md"])
 
 
 class TestPipelineIsolation(unittest.TestCase):

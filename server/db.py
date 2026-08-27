@@ -64,6 +64,8 @@ CREATE TABLE IF NOT EXISTS runs (
   result_json TEXT NOT NULL DEFAULT '',
   report_md TEXT NOT NULL DEFAULT '',
   error TEXT NOT NULL DEFAULT '',
+  consult_id INTEGER REFERENCES consults(id) ON DELETE SET NULL,
+  consult_md TEXT NOT NULL DEFAULT '',    -- 상담 조건이 무엇을 걸렀는지
   started_at TEXT NOT NULL DEFAULT (datetime('now')),
   finished_at TEXT
 );
@@ -108,6 +110,34 @@ CREATE TABLE IF NOT EXISTS org_settings (
   updated_at TEXT NOT NULL DEFAULT (datetime('now'))
 );
 
+-- 상담 기록. 개인정보(성명·연락처·거주지·근무지)가 들어가는 유일한 표다.
+-- 그래서 다른 표와 다르게 셋을 더 짊어진다:
+--   1. 동의 없이는 저장하지 않는다(app.py 가 막는다)
+--   2. 보관기간이 지나면 파기 대상으로 표시한다(consults.만료됨)
+--   3. 연락처 열람은 '개인정보 열람' 으로 감사 로그에 따로 남는다
+-- 심의로는 조건만 넘어가고 개인정보는 넘어가지 않는다(analysis/consult.py 의 읽는키).
+CREATE TABLE IF NOT EXISTS consults (
+  id INTEGER PRIMARY KEY,
+  org_id INTEGER NOT NULL REFERENCES orgs(id) ON DELETE CASCADE,
+  -- 개인정보
+  고객명 TEXT NOT NULL,
+  고객전화번호 TEXT NOT NULL DEFAULT '',
+  거주지 TEXT NOT NULL DEFAULT '',
+  근무지 TEXT NOT NULL DEFAULT '',
+  동의 INTEGER NOT NULL DEFAULT 0,
+  -- 조건 — 알고리즘(운영형태·투자금형태)과 필터(나머지)로 나뉜다
+  희망지역 TEXT NOT NULL DEFAULT '',      -- 선호 순, 쉼표 구분
+  희망평수 REAL,
+  희망상권 TEXT NOT NULL DEFAULT '',      -- 쉼표 구분
+  보증금_만원 REAL, 권리금_만원 REAL,
+  투자금형태 TEXT NOT NULL DEFAULT '현금',
+  운영형태 TEXT NOT NULL DEFAULT '점주+알바',
+  메모 TEXT NOT NULL DEFAULT '',
+  created_by INTEGER NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS ix_consults_org ON consults(org_id);
+
 CREATE TABLE IF NOT EXISTS sessions (
   token TEXT PRIMARY KEY,
   user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -127,9 +157,21 @@ def connect(path: Path | None = None) -> sqlite3.Connection:
     return con
 
 
+# 이미 만들어진 DB 에 뒤늦게 붙는 열. CREATE TABLE IF NOT EXISTS 는 열을 더해 주지
+# 않으므로 여기서 따로 채운다. (열 추가만 다룬다 — 형 변경·삭제는 손으로 옮긴다)
+MIGRATIONS = [
+    ("runs", "consult_id", "INTEGER REFERENCES consults(id) ON DELETE SET NULL"),
+    ("runs", "consult_md", "TEXT NOT NULL DEFAULT ''"),
+]
+
+
 def init(path: Path | None = None) -> None:
     with connect(path) as con:
         con.executescript(SCHEMA)
+        for table, col, decl in MIGRATIONS:
+            have = {r["name"] for r in con.execute(f"PRAGMA table_info({table})")}
+            if col not in have:
+                con.execute(f"ALTER TABLE {table} ADD COLUMN {col} {decl}")
 
 
 @contextmanager
@@ -146,7 +188,7 @@ def tx(path: Path | None = None):
 # org_id 를 빼먹을 수 없게 인자로 받는다. 아래를 거치지 않는 SELECT 는 두지 않는다.
 
 def rows_for_org(con, table: str, org_id: int, where: str = "", args=()) -> list[dict]:
-    if table not in ("batches", "runs", "users", "audit", "stores"):
+    if table not in ("batches", "runs", "users", "audit", "stores", "consults"):
         raise ValueError(f"허용되지 않은 테이블: {table}")
     sql = f"SELECT * FROM {table} WHERE org_id = ?"
     if where:
