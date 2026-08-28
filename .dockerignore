@@ -1,0 +1,13 @@
+.git
+.github
+__pycache__/
+**/__pycache__/
+*.pyc
+*.sqlite3
+*.sqlite3-wal
+*.sqlite3-shm
+tests/
+seed_demo.py
+requirements-dev.txt
+*.md
+.env

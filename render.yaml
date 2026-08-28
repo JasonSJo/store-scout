@@ -1,0 +1,34 @@
+# Render 배포 설정 (Blueprint)
+#
+#   저장소를 Render 에 연결 → New + → Blueprint → 이 파일을 읽는다
+#   배포 뒤 Shell 에서 한 번:
+#     python3 -m server.bootstrap --org "조직명" --email you@brand.co.kr
+#
+# ⚠ 디스크가 붙는 유료 플랜(starter 이상)이어야 한다. free 플랜은 디스크를 못 붙이고
+#   비활성 시 잠들기 때문에, 도는 중인 심의가 사라지고 SQLite 도 남지 않는다.
+
+services:
+  - type: web
+    name: store-scout
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: starter
+    region: singapore
+    healthCheckPath: /healthz
+
+    # 인스턴스는 하나다. SQLite 와 실행 중인 백그라운드 작업이 한 프로세스에 묶여
+    # 있어 늘리면 데이터가 갈라진다 (DEPLOY.md).
+    numInstances: 1
+
+    disk:
+      name: scout-data
+      mountPath: /data
+      sizeGB: 1
+
+    envVars:
+      - key: STORE_SCOUT_DB
+        value: /data/store-scout.sqlite3
+      - key: STORE_SCOUT_HTTPS
+        value: "1"
+      - key: STORE_SCOUT_TIMEOUT
+        value: "900"

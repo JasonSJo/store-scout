@@ -1,0 +1,58 @@
+# 직접 서버에 올릴 때 (사내 서버·VPS)
+#
+#   docker compose up -d --build
+#   docker compose exec app python3 -m server.bootstrap --org "조직명" --email you@brand.co.kr
+#
+# ⚠ 이 구성은 8000 포트로 **평문 HTTP** 를 연다. 앞에 HTTPS 를 끝내는 리버스 프록시
+#   (Caddy·nginx·Cloudflare Tunnel 등)를 두십시오. 로그인 쿠키와 고객 연락처가
+#   그대로 흐르는 경로입니다. 프록시를 두면 STORE_SCOUT_HTTPS=1 을 켜 두십시오 —
+#   그래야 세션 쿠키에 Secure 가 붙습니다.
+
+services:
+  app:
+    build:
+      context: .
+      # 알고리즘 리비전을 올릴 때 바꾼다. 브랜치명이 아니라 커밋 SHA 로.
+      # args:
+      #   PIPELINE_REV: 커밋SHA
+    restart: unless-stopped
+    # 프록시 뒤에 두는 것이 전제다. 외부에 직접 노출하려면 이 줄을 "8000:8000" 으로
+    # 바꾸기 전에 위의 경고를 먼저 읽으십시오.
+    ports:
+      - "127.0.0.1:8000:8000"
+    environment:
+      STORE_SCOUT_DB: /data/store-scout.sqlite3
+      STORE_SCOUT_TIMEOUT: "900"
+      # 프록시가 HTTPS 를 끝내면 "1" 로 두십시오
+      STORE_SCOUT_HTTPS: "${STORE_SCOUT_HTTPS:-}"
+    volumes:
+      - scout-data:/data
+    healthcheck:
+      test: ["CMD", "python3", "-c",
+             "import urllib.request,sys; sys.exit(0 if b'pipeline=yes' in urllib.request.urlopen('http://127.0.0.1:8000/healthz',timeout=4).read() else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 15s
+
+  # 매일 03:30 에 백업 한 벌. 최근 14개만 남긴다.
+  # 백업에는 기존점 실매출과 상담 개인정보가 들어 있다 — ./backup 을 서버와 같은
+  # 수준으로 통제하거나, 암호화해 다른 곳으로 옮기십시오.
+  backup:
+    build: .
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "-c"]
+    # 시계 산술을 하지 않는다 — 컨테이너 시간대와 date 구현에 따라 조용히 어긋난다.
+    # 올릴 때 한 벌 뜨고 그 뒤 24시간마다 한 벌.
+    command: >
+      'while true; do
+         python3 scripts/backup.py /backup --keep 14 || echo "백업 실패";
+         sleep 86400;
+       done'
+    environment:
+      STORE_SCOUT_DB: /data/store-scout.sqlite3
+    volumes:
+      - scout-data:/data
+      - ./backup:/backup
+
+volumes:
+  scout-data:

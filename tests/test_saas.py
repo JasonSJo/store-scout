@@ -24,8 +24,8 @@ _TMP = tempfile.mkdtemp(prefix="scout-test-")
 os.environ["STORE_SCOUT_DB"] = str(Path(_TMP) / "t.sqlite3")
 
 from fastapi.testclient import TestClient       # noqa: E402
-from server import (app as app_mod, auth, consults, db, jobs, orgdata,   # noqa: E402
-                    plans, views)
+from server import (app as app_mod, auth, bootstrap, consults, db, jobs,   # noqa: E402
+                    orgdata, plans, views)
 
 
 def seed(onboard: bool = True):
@@ -723,6 +723,90 @@ class TestConsultToJudgment(unittest.TestCase):
         self.assertLess(run["billed_units"], 올린수)
         self.assertEqual(run["billed_units"], len(json.loads(run["result_json"])["후보지"]))
         self.assertTrue(run["consult_md"])
+
+
+class TestDeployment(unittest.TestCase):
+    """배포한 인스턴스에서만 드러나는 것들."""
+
+    def test_첫_계정을_서버에서_만들_수_있다(self):
+        """배포 직후 DB 는 비어 있고 화면에 가입 경로가 없다. 이게 없으면
+        아무도 들어갈 수 없다."""
+        db.DB_PATH = Path(os.environ["STORE_SCOUT_DB"])
+        if db.DB_PATH.exists():
+            db.DB_PATH.unlink()
+        rc = bootstrap.main(["--org", "새 본부", "--plan", "team",
+                             "--email", "Boss@Brand.co.kr", "--name", "대표"])
+        self.assertEqual(rc, 0)
+        with db.tx() as con:
+            u = con.execute("SELECT * FROM users").fetchone()
+            o = con.execute("SELECT * FROM orgs").fetchone()
+        self.assertEqual(u["email"], "boss@brand.co.kr")   # 소문자로 정규화
+        self.assertEqual(u["role"], "관리자")
+        self.assertEqual(o["plan"], "team")
+        # 데이터를 지어내지 않는다 — 온보딩은 사람이 채운다
+        with db.tx() as con:
+            self.assertEqual(con.execute("SELECT COUNT(*) c FROM stores").fetchone()["c"], 0)
+
+    def test_같은_이메일로_두_번_만들지_않는다(self):
+        db.DB_PATH = Path(os.environ["STORE_SCOUT_DB"])
+        if db.DB_PATH.exists():
+            db.DB_PATH.unlink()
+        self.assertEqual(bootstrap.main(["--org", "A", "--email", "x@a.kr"]), 0)
+        self.assertEqual(bootstrap.main(["--org", "B", "--email", "x@a.kr"]), 1)
+        with db.tx() as con:
+            # 조직만 덩그러니 남지 않는다
+            self.assertEqual(con.execute("SELECT COUNT(*) c FROM orgs").fetchone()["c"], 1)
+
+    def test_재시작하면_중단된_심의를_실패로_정리한다(self):
+        """파이프라인은 이 프로세스의 백그라운드 작업이다. 배포·크래시로 프로세스가
+        죽으면 작업도 죽지만 상태는 '실행중' 으로 남아, 화면이 영원히 기다리고
+        사용량에도 계속 잡힌다."""
+        ids = seed()
+        with db.tx() as con:
+            b = con.execute("INSERT INTO batches (org_id,name,created_by,sites_csv,site_count)"
+                            " VALUES (?,?,?,?,?)",
+                            (ids["A"]["org"], "묶음", ids["A"]["운영"], "x", 6)).lastrowid
+            run = con.execute("INSERT INTO runs (org_id,batch_id,status,billed_units)"
+                              " VALUES (?,?,'실행중',6)", (ids["A"]["org"], b)).lastrowid
+        app_mod._recover_interrupted_runs()
+        with db.tx() as con:
+            got = db.row_for_org(con, "runs", ids["A"]["org"], run)
+        self.assertEqual(got["status"], "실패")
+        self.assertEqual(got["billed_units"], 0)      # 실패는 청구하지 않는다
+        self.assertIn("다시 시작", got["error"])
+
+    def test_배포_설정이_전부_같은_볼륨을_가리킨다(self):
+        """DB 경로가 볼륨 밖이면 재배포 때 조직 데이터가 통째로 사라진다."""
+        import tomllib
+        import yaml as _yaml
+        fly = tomllib.loads((ROOT / "fly.toml").read_bytes().decode())
+        self.assertTrue(fly["env"]["STORE_SCOUT_DB"].startswith(
+            fly["mounts"]["destination"] + "/"))
+        # 인스턴스는 하나여야 한다 — SQLite 와 백그라운드 작업이 한 프로세스에 묶여 있다
+        self.assertEqual(fly["http_service"]["min_machines_running"], 1)
+        self.assertEqual(fly["http_service"]["auto_stop_machines"], "off")
+
+        r = _yaml.safe_load((ROOT / "render.yaml").read_bytes())["services"][0]
+        env = {e["key"]: e["value"] for e in r["envVars"]}
+        self.assertEqual(r["numInstances"], 1)
+        self.assertTrue(env["STORE_SCOUT_DB"].startswith(r["disk"]["mountPath"] + "/"))
+
+    def test_이미지가_알고리즘을_커밋으로_고정한다(self):
+        """브랜치를 따라가면 어제 통과한 후보지가 오늘 부결이 되고 이유를 알 수 없다."""
+        import re as _re
+        df = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+        # ARG 로 선언한 기본값만 본다 (ENV 는 그 ARG 를 참조한다)
+        revs = _re.findall(r"^ARG PIPELINE_REV=(\S+)", df, _re.M)
+        self.assertTrue(revs, "PIPELINE_REV 가 없습니다")
+        for rev in revs:
+            self.assertRegex(rev, r"^[0-9a-f]{40}$", f"커밋 SHA 가 아닙니다: {rev}")
+        self.assertEqual(len(set(revs)), 1, "두 단계의 리비전이 다릅니다")
+
+    def test_배포_이미지가_데모_시드를_담지_않는다(self):
+        """seed_demo.py 는 꾸며 낸 매출을 넣는다. 운영 이미지에 있으면 안 된다."""
+        ignore = (ROOT / ".dockerignore").read_text(encoding="utf-8").split()
+        self.assertIn("seed_demo.py", ignore)
+        self.assertIn("tests/", ignore)
 
 
 class TestPipelineIsolation(unittest.TestCase):

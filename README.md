@@ -4,6 +4,7 @@
 상권분석 알고리즘 M1~M6 을 돌리고 결과를 보관·통제한다.
 
 제품 정의(대상·요금제·팔 수 있는 것과 없는 것)는 **[PRODUCT.md](PRODUCT.md)**.
+배포는 **[DEPLOY.md](DEPLOY.md)** — Fly.io · Render · 직접 서버 세 가지 구성이 들어 있다.
 
 ---
 
@@ -23,9 +24,16 @@ M1~M6 파이프라인의 원본은
 # 알고리즘 저장소를 나란히 클론
 git clone https://github.com/JasonSJo/jasons-company ../jasons-company
 
-pip install -r requirements.txt
+pip install -r requirements-dev.txt       # 운영은 requirements.txt 만
 python3 seed_demo.py                     # 데모 조직 + 계정 3개 (비밀번호 demo-1234)
 python3 -m uvicorn server.app:app --reload
+```
+
+운영에서는 `seed_demo.py` 를 쓰지 마십시오 — 꾸며 낸 기존점 매출을 넣습니다.
+빈 DB 에 첫 조직과 관리자를 만드는 것은 따로 있습니다:
+
+```bash
+python3 -m server.bootstrap --org "조직명" --plan team --email you@brand.co.kr
 ```
 
 `http://127.0.0.1:8000` → `admin@cafehada.kr` / `demo-1234`
@@ -70,6 +78,7 @@ python3 -m uvicorn server.app:app --reload
 | `STORE_SCOUT_PIPELINE` | analysis 디렉터리 | 나란히 클론한 jasons-company 에서 자동 탐색 |
 | `STORE_SCOUT_TIMEOUT` | 파이프라인 제한 시간(초) | `600` |
 | `STORE_SCOUT_HTTPS` | 값이 있으면 세션 쿠키에 `Secure` | (없음) |
+| `STORE_SCOUT_PIPELINE_REV` | 도는 알고리즘의 커밋 SHA (`/healthz` 에 표시) | `unknown` |
 
 ## 설계에서 물러서지 않은 것 넷
 
@@ -141,6 +150,18 @@ python3 -m uvicorn server.app:app --reload
 - **입력·상담 화면 통합.** 지금은 jasons-company 의 `cafe-trade-area/input`,
   `consult` 가 별도 정적 페이지다. 조직 계정과 이어지면 CSV 를 손으로 옮기지 않아도 된다.
 
+## 배포
+
+컨테이너 하나 + 볼륨 하나. 이미지가 알고리즘을 **커밋 SHA 로 고정해** 담는다 —
+브랜치를 따라가면 어제 통과한 후보지가 오늘 부결이 되고 이유를 알 수 없다.
+지금 도는 판은 `GET /healthz` 가 `rev=<SHA>` 로 알려 준다.
+
+인스턴스는 **하나여야 한다.** 상태가 SQLite 파일에 있고 심의 실행이 그 프로세스 안의
+백그라운드 작업이라, 둘로 늘리면 데이터가 조용히 갈라진다. 설정 세 벌이 모두 1개를
+강제하고 테스트가 그 값을 지킨다.
+
+자세한 절차와 백업·복구는 [DEPLOY.md](DEPLOY.md).
+
 ## 테스트
 
 ```bash
@@ -148,4 +169,4 @@ python3 -m unittest discover -s tests
 ```
 
 기능 검사가 아니라 **사고 방지선** 검사다 — 조직 격리, 권한, 한도 게이팅,
-등급 표시, 감사 로그.
+등급 표시, 감사 로그, 상담 개인정보, 배포 설정.

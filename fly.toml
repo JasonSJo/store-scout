@@ -1,0 +1,60 @@
+# Fly.io 배포 설정
+#
+#   fly launch --no-deploy --copy-config   # 앱 이름·지역만 잡는다
+#   fly volumes create scout_data --size 1 --region nrt
+#   fly deploy
+#   fly ssh console -C "python3 -m server.bootstrap --org '조직명' --email you@brand.co.kr"
+#
+# 지역은 nrt(도쿄)를 기본으로 뒀다. 이용자가 한국에 있고, 파이프라인이 수 분씩
+# 도는 동안 왕복 지연보다 실행 시간이 훨씬 크지만, 화면 조작은 지연이 그대로 보인다.
+
+app = "store-scout"
+primary_region = "nrt"
+
+[build]
+  dockerfile = "Dockerfile"
+  # 알고리즘 리비전을 올릴 때 여기와 Dockerfile 의 기본값을 함께 바꾼다
+  # [build.args]
+  #   PIPELINE_REV = "커밋SHA"
+
+[env]
+  STORE_SCOUT_HTTPS = "1"
+  STORE_SCOUT_DB = "/data/store-scout.sqlite3"
+  STORE_SCOUT_TIMEOUT = "900"
+
+# 조직 데이터가 여기 있다. 이 볼륨을 지우면 복구할 방법이 없다 —
+# scripts/backup.py 로 밖에 한 벌 두십시오.
+[mounts]
+  source = "scout_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8000
+  force_https = true
+
+  # 기계는 **하나**여야 한다. SQLite 파일과 실행 중인 백그라운드 작업이 한 프로세스에
+  # 묶여 있어, 둘로 늘리면 각자 다른 볼륨에 다른 조직 데이터를 쌓는다. 화면은 멀쩡해
+  # 보이고 데이터만 조용히 갈라진다. 늘리려면 먼저 Postgres 와 작업 큐로 옮겨야 한다.
+  min_machines_running = 1
+  auto_start_machines = true
+  # 자동 정지를 끈다. 심의가 도는 중에 기계가 멈추면 그 실행이 통째로 날아간다
+  # (재시작 때 '실패'로 정리되긴 하지만 사용자는 다시 올려야 한다).
+  auto_stop_machines = "off"
+
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 40
+    hard_limit = 80
+
+  [[http_service.checks]]
+    grace_period = "20s"
+    interval = "30s"
+    method = "GET"
+    path = "/healthz"
+    timeout = "5s"
+
+[[vm]]
+  size = "shared-cpu-1x"
+  # 파이프라인이 후보지 수십 곳을 한 번에 도는 동안 메모리를 쓴다.
+  # 256MB 에서는 큰 묶음이 OOM 으로 죽는다.
+  memory = "1gb"

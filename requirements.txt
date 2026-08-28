@@ -1,5 +1,5 @@
 fastapi>=0.115
 uvicorn[standard]>=0.30
 python-multipart>=0.0.9
-# 테스트용
-httpx>=0.27
+# 조직 설정을 파이프라인의 설정.yaml 로 내보낼 때 쓴다 (server/orgdata.py)
+PyYAML>=6.0

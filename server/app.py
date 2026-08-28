@@ -30,6 +30,25 @@ app = FastAPI(title="출점심의", docs_url=None, redoc_url=None)
 @app.on_event("startup")
 def _startup() -> None:
     db.init()
+    _recover_interrupted_runs()
+
+
+def _recover_interrupted_runs() -> None:
+    """재시작 전에 돌던 심의를 실패로 정리한다.
+
+    파이프라인은 이 프로세스 안의 백그라운드 작업으로 돈다. 배포·재시작·크래시로
+    프로세스가 죽으면 그 작업도 함께 죽지만 DB 의 상태는 '실행중' 인 채로 남는다.
+    결과 화면은 3초마다 새로 고치며 영원히 기다리고, 그 건은 사용량에도 계속 잡힌다.
+    시작 시점에 '실행중' 인 행은 예외 없이 죽은 프로세스의 것이므로(단일 인스턴스가
+    전제다 — DEPLOY.md) 여기서 끊어 준다. 실패는 청구하지 않는다.
+    """
+    with db.tx() as con:
+        n = con.execute(
+            "UPDATE runs SET status='실패', billed_units=0, "
+            "error='서버가 다시 시작되어 실행이 중단되었습니다. 다시 실행하십시오.', "
+            "finished_at=datetime('now') WHERE status='실행중'").rowcount
+    if n:
+        print(f"[startup] 중단된 심의 {n}건을 실패로 정리했습니다", flush=True)
 
 
 def _con(request: Request):
@@ -520,4 +539,7 @@ def view_audit(user=Depends(current_user), con=Depends(_con)):
 @app.get("/healthz", response_class=PlainTextResponse)
 def healthz():
     ok, why = jobs.available()
-    return f"ok pipeline={'yes' if ok else 'no'} {why}".strip()
+    # 파이프라인 리비전을 함께 낸다. 판정이 알고리즘 판에 따라 달라지므로,
+    # 어떤 판이 그 판정을 냈는지 나중에 확인할 수 있어야 한다(이미지 빌드 시 주입).
+    rev = os.environ.get("STORE_SCOUT_PIPELINE_REV", "unknown")
+    return f"ok pipeline={'yes' if ok else 'no'} rev={rev} {why}".strip()
