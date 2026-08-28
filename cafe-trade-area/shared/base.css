@@ -1,0 +1,299 @@
+/* 상권분석 공통 스타일 — 데이터 입력·고객 상담 두 화면이 함께 씁니다.
+
+   전에는 input/styles.css 를 consult/ 로 복사해 두 벌로 두고 있었습니다.
+   토큰이 같아 보였을 뿐 원본이 둘이라, 한쪽 색을 고치면 다른 쪽이 조용히 어긋납니다.
+   그 254줄을 여기로 옮겼습니다. 페이지 고유 규칙만 각자의 styles.css 에 남습니다.
+
+   심의 콘솔(app/styles.css)은 여기 들어오지 않습니다 — 디자인 언어가 다릅니다
+   (사내 화면이고 배포되지도 않습니다).
+
+     <link rel="stylesheet" href="../shared/base.css"/>   먼저
+     <link rel="stylesheet" href="styles.css"/>           페이지 고유 규칙 */
+/* 상권분석 데이터 입력 — 소개 페이지·심의 콘솔과 같은 측량 도면 시각 언어.
+   종이 바탕 · 잉크 먹색 · 로스트 시에나 단일 시그널. 수치는 모노스페이스 조판. */
+:root{
+  --bg:#efeae0; --bg-soft:#e6dfd1; --card:#f5f2ea; --border:#cabfad; --border-2:#ddd4c4;
+  --fg:#17130f; --soft:#4b423a; --mute:#8a7f6e;
+  --sig:#9a3b1b; --sig-ink:#6f2911; --sig-soft:#e8dbd1;
+  --ok:#2f5d50; --warn:#b0822a; --no:#a8231c;
+  --maxw:1140px;
+}
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0;background:var(--bg);color:var(--fg);line-height:1.65;letter-spacing:-.01em;
+  font-family:'IBM Plex Sans KR','Pretendard',-apple-system,'Malgun Gothic',sans-serif;
+  -webkit-font-smoothing:antialiased;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)' opacity='.16'/%3E%3C/svg%3E");
+}
+a{color:var(--sig);text-decoration:none}
+a:hover{text-decoration:underline}
+:focus-visible{outline:2px solid var(--sig);outline-offset:2px}
+/* 더블탭 확대 지연 제거 + 탭 하이라이트를 의도한 색으로. 둘 다 모바일에서만 보인다. */
+button,a,label,summary,[role=group] button{touch-action:manipulation}
+button,a{-webkit-tap-highlight-color:rgba(154,59,27,.18)}
+
+/* 본문 바로가기 — 키보드로 들어온 사람이 머리말 링크를 전부 지나치지 않아도 되게. */
+.skip{position:absolute;left:-9999px;top:0;z-index:99;
+  padding:10px 16px;background:var(--sig);color:#fff;font-weight:600;font-size:14px}
+.skip:focus{left:8px;top:8px;text-decoration:none}
+/* 화면에서만 숨긴다 — display:none 이면 스크린리더도 못 읽는다. */
+.vh{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;
+  clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
+h1,h2,h3{margin:0;font-family:'Hahmlet','Nanum Myeongjo',serif;letter-spacing:-.02em}
+.wrap{max-width:var(--maxw);margin:0 auto;padding:0 22px}
+.hide{display:none !important}
+.mono{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums}
+
+/* ── 머리 ─────────────────────────────── */
+header.top{background:var(--bg);border-bottom:1px solid var(--border);position:sticky;top:0;z-index:30}
+.top-in{display:flex;align-items:center;gap:14px;padding:13px 0;flex-wrap:wrap}
+.brand{display:flex;align-items:center;gap:10px;font-weight:600;font-size:15px;color:var(--fg)}
+.brand:hover{text-decoration:none}
+.brand .mk{width:26px;height:26px;border-radius:50%;background:var(--sig);color:#fff;
+  display:grid;place-items:center;font-family:'IBM Plex Mono',monospace;font-size:13px}
+.brand small{font-weight:400;color:var(--mute);font-size:12px}
+.top-acts{margin-left:auto;display:flex;gap:7px;flex-wrap:wrap}
+
+/* ── 안내 ─────────────────────────────── */
+.intro{padding:30px 0 22px}
+.intro h1{font-size:clamp(24px,3.4vw,32px);font-weight:700;line-height:1.25}
+.intro p{margin:10px 0 0;max-width:70ch;color:var(--soft);font-size:14.5px}
+.steps{display:flex;gap:0;flex-wrap:wrap;margin-top:20px;border:1px solid var(--border);background:var(--card)}
+.step{flex:1 1 210px;padding:14px 18px;border-left:1px solid var(--border)}
+.step:first-child{border-left:0}
+.step b{display:block;font-family:'IBM Plex Mono',monospace;font-size:10px;
+  letter-spacing:.18em;text-transform:uppercase;color:var(--sig);margin-bottom:5px}
+.step span{font-size:13px;color:var(--soft)}
+
+/* ── 버튼 · 입력 ─────────────────────────────── */
+button{
+  font:inherit;font-size:13.5px;font-weight:500;border-radius:2px;padding:8px 14px;cursor:pointer;
+  border:1px solid var(--border);background:var(--card);color:var(--fg);
+  display:inline-flex;align-items:center;gap:6px;transition:background .15s,border-color .15s;
+}
+button:hover{background:var(--bg-soft)}
+button:disabled{opacity:.45;cursor:not-allowed}
+.primary{background:var(--sig);color:#fff;border-color:var(--sig)}
+.primary:hover{background:var(--sig-ink);border-color:var(--sig-ink)}
+.ghost{background:transparent}
+.danger{color:var(--no);border-color:var(--no)}
+.sm{font-size:12.5px;padding:5px 10px}
+
+input,select,textarea{
+  font:inherit;font-size:13.5px;color:var(--fg);background:var(--card);
+  border:1px solid var(--border);border-radius:2px;padding:8px 10px;width:100%;
+}
+input[type=number]{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;text-align:right}
+input:focus,select:focus,textarea:focus{outline:2px solid var(--sig-soft);border-color:var(--sig)}
+input.bad,select.bad{border-color:var(--no);background:#fbf0ee}
+textarea{resize:vertical;min-height:56px}
+
+/* ── 레이아웃 ─────────────────────────────── */
+.cols{display:grid;grid-template-columns:264px minmax(0,1fr);gap:18px;align-items:start;padding-bottom:80px}
+@media(max-width:880px){.cols{grid-template-columns:1fr}}
+
+/* 후보지 목록 */
+.sidebar{border:1px solid var(--border);background:var(--card);position:sticky;top:64px}
+@media(max-width:880px){.sidebar{position:static}}
+.sidebar h2{padding:14px 16px 0;font-size:11px;font-family:'IBM Plex Mono',monospace;
+  letter-spacing:.18em;text-transform:uppercase;color:var(--mute);font-weight:500}
+.slist{list-style:none;margin:10px 0 0;padding:0;max-height:52vh;overflow:auto}
+.slist li{border-top:1px solid var(--border-2)}
+.slist button{
+  width:100%;border:0;border-radius:0;background:none;text-align:left;padding:11px 16px;
+  display:flex;align-items:baseline;gap:8px;
+}
+.slist button:hover{background:var(--bg-soft)}
+.slist li.on button{background:var(--sig-soft);box-shadow:inset 3px 0 0 var(--sig)}
+.slist .nm{flex:1;font-size:13.5px;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.slist .st{font-size:10px;font-family:'IBM Plex Mono',monospace;letter-spacing:.06em;white-space:nowrap}
+.st.ready{color:var(--ok)} .st.hold{color:var(--warn)} .st.bad{color:var(--no)}
+.sidefoot{padding:12px 16px;border-top:1px solid var(--border);display:flex;gap:6px;flex-wrap:wrap}
+
+/* 폼 */
+.pane{border:1px solid var(--border);background:var(--card)}
+.pane-head{padding:16px 20px;border-bottom:1px solid var(--border);display:flex;
+  gap:12px;align-items:flex-start;flex-wrap:wrap}
+.pane-head h2{font-size:19px;font-weight:700}
+.pane-head .sub{font-size:12.5px;color:var(--mute);margin-top:2px}
+.pane-head .acts{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+
+fieldset{border:0;border-top:1px solid var(--border);margin:0;padding:18px 20px 20px}
+fieldset:first-of-type{border-top:0}
+legend{
+  padding:0;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--sig);font-weight:500;
+}
+fieldset .note{margin:7px 0 16px;font-size:12.5px;color:var(--mute);max-width:76ch}
+.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 20px}
+@media(max-width:620px){.grid{grid-template-columns:1fr}}
+.f{display:flex;flex-direction:column;gap:5px}
+.f.wide{grid-column:1/-1}
+.f-h{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
+.f label,.fld .lb{font-size:12.5px;font-weight:500;color:var(--soft)}
+.f .mod{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.1em;
+  color:var(--mute);border:1px solid var(--border);padding:0 5px;white-space:nowrap}
+.f .mod.none{color:var(--mute);opacity:.7}
+.f .req{color:var(--no);font-size:11px}
+.f .help{font-size:11.5px;color:var(--mute);line-height:1.55}
+.f .err{font-size:11.5px;color:var(--no);font-weight:500}
+
+/* ── 준비 상태 ─────────────────────────────── */
+.ready-box{border:1px solid var(--border);border-left-width:3px;background:var(--card);
+  padding:15px 18px;margin-top:18px}
+.ready-box.ok{border-left-color:var(--ok)}
+.ready-box.warn{border-left-color:var(--warn)}
+.ready-box.bad{border-left-color:var(--no)}
+.ready-box h3{font-size:14px;font-weight:700;margin-bottom:7px}
+.ready-box.ok h3{color:var(--ok)} .ready-box.warn h3{color:var(--warn)} .ready-box.bad h3{color:var(--no)}
+.ready-box ul{margin:0;padding-left:18px;font-size:13px;color:var(--soft)}
+.ready-box li{margin-bottom:4px}
+.ready-box li:last-child{margin-bottom:0}
+.ready-box .who{color:var(--mute);font-size:12px}
+
+/* ── 다음 단계 ─────────────────────────────── */
+.next{border:1px solid var(--border);background:var(--card);padding:18px 20px;margin-top:18px}
+.next h2,.next h3{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--mute);font-weight:500;margin-bottom:10px}
+.next p{margin:0 0 10px;font-size:13.5px;color:var(--soft)}
+pre{margin:0;padding:12px 14px;background:var(--bg);border:1px solid var(--border);
+  font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12.5px;line-height:1.7;overflow-x:auto}
+code{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12px;
+  background:var(--bg);border:1px solid var(--border-2);padding:1px 5px}
+
+/* ── 토스트 ─────────────────────────────── */
+#toast{
+  position:fixed;left:50%;bottom:24px;transform:translateX(-50%) translateY(16px);z-index:60;
+  background:var(--fg);color:var(--bg);font-size:13.5px;font-weight:500;padding:11px 18px;
+  opacity:0;pointer-events:none;transition:opacity .18s,transform .18s;max-width:88vw;text-align:center;
+}
+#toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+
+footer{border-top:1px solid var(--border);padding:26px 0 46px;color:var(--mute);font-size:12.5px}
+
+/* ── 위치 블록 ─────────────────────────────── */
+fieldset.place .note{margin-bottom:12px}
+.searchrow{display:flex;gap:7px;flex-wrap:wrap}
+.searchrow input{flex:1 1 240px}
+.searchrow button{flex:0 0 auto}
+
+.hits{margin-top:9px;border:1px solid var(--border);background:var(--bg);max-height:290px;overflow:auto}
+.hits button{
+  width:100%;border:0;border-radius:0;background:none;text-align:left;padding:10px 13px;
+  display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;border-top:1px solid var(--border-2);
+}
+.hits button:first-child{border-top:0}
+.hits button:hover{background:var(--sig-soft)}
+.hits .nm{font-weight:600;font-size:13.5px}
+.hits .ad{flex:1 1 220px;font-size:12.5px;color:var(--mute)}
+.hits .src{font-family:'IBM Plex Mono',monospace;font-size:9.5px;letter-spacing:.1em;
+  color:var(--mute);border:1px solid var(--border);padding:1px 5px}
+.hit-empty{padding:13px;font-size:13px;color:var(--mute);text-align:center}
+
+.keyhint{margin:9px 0 0;font-size:12.5px;color:var(--mute)}
+.keybox{margin-top:11px;padding:12px 14px;border:1px solid var(--border);background:var(--bg)}
+.keybox label{display:block;font-size:12.5px;font-weight:500;color:var(--soft)}
+.keybox small{display:block;font-size:12.5px;font-weight:400;color:var(--mute);margin-bottom:6px}
+
+.picked{margin-top:14px;border:1px solid var(--border);border-left-width:3px;
+  border-left-color:var(--sig);background:var(--bg);padding:13px 16px}
+.picked.empty{border-left-color:var(--border)}
+.picked .row{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:6px 0}
+.picked .row + .row{border-top:1px solid var(--border-2)}
+.picked .lb{flex:0 0 66px;font-size:12px;color:var(--mute)}
+.picked b{font-size:14px}
+.picked input[type=text]{flex:1 1 200px;max-width:340px}
+.picked .miss{font-size:13px;color:var(--warn)}
+.picked > .miss{display:block;padding:4px 0}
+
+/* 지도 — 좌표 두 줄만 봐서는 그 자리가 맞는지 알 수 없다 */
+.mapwrap{margin-top:12px}
+.mapbox{width:100%;height:280px;border:1px solid var(--border);background:var(--bg-2)}
+.mapbox img{max-width:none}          /* 카카오 타일이 페이지 규칙에 눌리지 않게 */
+.maphint{margin:7px 0 0}
+.mapfail{display:flex;align-items:center;justify-content:center;height:100%;
+  padding:16px;text-align:center;font-size:13px;color:var(--warn)}
+.drift{margin-top:10px;border:1px solid var(--warn);border-left-width:3px;
+  background:var(--bg);padding:11px 13px;font-size:13px}
+.drift p{margin:0 0 8px;line-height:1.6}
+.drift .warn{color:var(--warn)}
+.drift button{margin-right:6px}
+@media(max-width:640px){.mapbox{height:220px}}
+
+.svc{margin-top:14px}
+.svc-h{font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.2em;
+  text-transform:uppercase;color:var(--mute);margin-bottom:8px}
+.svc-b{display:grid;grid-template-columns:repeat(auto-fit,minmax(158px,1fr));gap:7px}
+.svc-b a{
+  border:1px solid var(--border);background:var(--bg);padding:10px 12px;
+  display:flex;flex-direction:column;gap:2px;text-decoration:none;
+  transition:background .15s,border-color .15s;
+}
+.svc-b a:hover{background:var(--sig-soft);border-color:var(--sig);text-decoration:none}
+.svc-b .nm{font-size:13px;font-weight:600;color:var(--fg)}
+.svc-b .ds{font-size:11.5px;color:var(--mute)}
+.picked .lawd{font-size:11.5px;color:var(--mute)}
+.picked .lawd b{font-size:11.5px;color:var(--soft)}
+.picked .lawd{font-size:11.5px;color:var(--mute)}
+.picked .lawd b{font-size:11.5px;color:var(--soft)}
+
+/* ── 간편 입력 ─────────────────────────────────────────── */
+.quicknote{
+  margin:16px 0 0;padding:12px 14px;border:1px solid var(--border);
+  border-left:3px solid var(--sig);background:var(--card);
+  font-size:13px;color:var(--soft);max-width:82ch;
+}
+.modes{display:flex;gap:8px;padding:14px 20px 0}
+.modes .mode{
+  flex:1;display:block;padding:10px 14px;text-align:left;cursor:pointer;
+  border:1px solid var(--border);background:var(--bg-soft);color:var(--soft);
+  font:inherit;font-size:13.5px;font-weight:600;letter-spacing:-.01em;
+}
+.modes .mode small{display:block;font-weight:400;font-size:11.5px;color:var(--mute);margin-top:2px}
+.modes .mode:hover{background:var(--card)}
+.modes .mode.on{background:var(--card);border-color:var(--sig);color:var(--sig-ink);box-shadow:inset 0 -2px 0 var(--sig)}
+.modes .mode.on small{color:var(--soft)}
+
+fieldset.quick .grid{margin-bottom:16px}
+.bep{border:1px solid var(--border);background:var(--card);padding:14px 16px;margin:0 0 16px}
+.bep-n{display:flex;align-items:baseline;justify-content:space-between;gap:14px;padding:4px 0}
+.bep-n span{font-size:13px;color:var(--soft)}
+.bep-n b{font-family:'IBM Plex Mono',monospace;font-size:26px;letter-spacing:-.02em;color:var(--sig-ink)}
+.bep-n b small{font-size:13px;font-weight:400;color:var(--mute);margin-left:3px}
+.bep .note{margin:10px 0 0;padding-top:10px;border-top:1px dashed var(--border-2)}
+table.curve{width:100%;border-collapse:collapse;font-size:13px}
+table.curve th,table.curve td{padding:6px 10px;border-bottom:1px solid var(--border-2);text-align:right}
+table.curve th:first-child,table.curve td:first-child{text-align:left}
+table.curve th{font-size:11.5px;font-weight:600;color:var(--mute);text-transform:none}
+table.curve tbody tr:last-child td{border-bottom:0}
+
+.assume{border:1px solid var(--border-2);background:var(--bg-soft);padding:12px 14px;margin:0 0 16px}
+.assume-h{font-size:12.5px;font-weight:600;color:var(--soft);margin-bottom:8px}
+.assume-h b{color:var(--sig-ink)}
+.assume-h .ok{display:block;font-weight:400;font-size:11.5px;color:var(--ok);margin-top:3px}
+table.assume-t{width:100%;border-collapse:collapse;font-size:12.5px}
+table.assume-t td{padding:5px 8px;border-bottom:1px solid var(--border-2);vertical-align:top}
+table.assume-t tr:last-child td{border-bottom:0}
+table.assume-t .k{width:26%;color:var(--soft);font-weight:500}
+table.assume-t .v{width:12%;color:var(--sig-ink)}
+table.assume-t .w{color:var(--mute);line-height:1.5}
+table.assume-t tr.kept .v{color:var(--ok)}
+table.assume-t tr.kept .w{font-style:italic}
+
+.quick-act{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.quick-act .note{margin:0;font-size:12.5px;color:var(--warn)}
+@media(max-width:720px){
+  .modes{flex-direction:column}
+  table.assume-t .k{width:34%}
+}
+
+
+/* 움직임을 줄여 달라고 설정한 사람에게는 전환을 끈다.
+   여기 전환은 .15~.18s 로 짧지만, 짧다고 예외로 두면 규칙이 규칙이 아니게 된다. */
+@media (prefers-reduced-motion: reduce){
+  *,*::before,*::after{
+    animation-duration:.01ms !important; animation-iteration-count:1 !important;
+    transition-duration:.01ms !important; scroll-behavior:auto !important;
+  }
+}

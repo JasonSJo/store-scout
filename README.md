@@ -8,22 +8,27 @@
 
 ---
 
-## 알고리즘은 이 저장소에 없다
+## 한 저장소에 다 있다
 
-M1~M6 파이프라인의 원본은
-[jasons-company](https://github.com/JasonSJo/jasons-company) 의
-`cafe-trade-area/analysis` 한 곳에 둔다. 여기로 복사해 오면 원본이 둘이 되고,
-한쪽 계수를 고쳤을 때 다른 쪽이 조용히 어긋난다.
+    cafe-trade-area/analysis/   M1~M6 파이프라인 (알고리즘)
+    cafe-trade-area/index.html  스스닷컴 소개 — store-scout.com 으로 나간다
+    cafe-trade-area/input/      후보지 데이터 입력 (공개)
+    cafe-trade-area/consult/    고객 상담 (공개 · 서버 없음)
+    cafe-trade-area/app/        심의 콘솔 — 사내 한정, 배포하지 않는다
+    cafe-trade-area/docs/       알고리즘 내부 설명 — 백엔드 문서, 배포하지 않는다
+    server/                     SaaS (FastAPI + SQLite)
 
-이 서비스는 그 디렉터리를 **서브프로세스로 부른다.** 경로는 자동으로 찾고
-(나란히 클론한 경우), 못 찾으면 `STORE_SCOUT_PIPELINE` 로 지정한다.
+전에는 알고리즘이 `jasons-company` 에 있었고 이 저장소가 그것을 빌드 때 받아
+왔다. 이관하면서 그럴 이유가 없어졌다 — **이 저장소의 커밋 하나가 곧 알고리즘
+판이다.** 판정이 왜 바뀌었는지 커밋으로 짚을 수 있다.
+
+서비스는 알고리즘을 **서브프로세스로 부른다**(import 하지 않는다 — 전역 계수
+레지스트리가 조직 사이에 새어 든다). 경로는 자동으로 찾고, 다른 판으로 돌려
+보려면 `STORE_SCOUT_PIPELINE` 로 지정한다.
 
 ## 돌려보기
 
 ```bash
-# 알고리즘 저장소를 나란히 클론
-git clone https://github.com/JasonSJo/jasons-company ../jasons-company
-
 pip install -r requirements-dev.txt       # 운영은 requirements.txt 만
 python3 seed_demo.py                     # 데모 조직 + 계정 3개 (비밀번호 demo-1234)
 python3 -m uvicorn server.app:app --reload
@@ -37,7 +42,7 @@ python3 -m server.bootstrap --org "조직명" --plan team --email you@brand.co.k
 ```
 
 `http://127.0.0.1:8000` → `admin@cafehada.kr` / `demo-1234`
-후보지 CSV 는 `../jasons-company/cafe-trade-area/analysis/후보지.example.csv` 를 쓰면 된다.
+후보지 CSV 는 `cafe-trade-area/analysis/후보지.example.csv` 를 쓰면 된다.
 `GET /healthz` 가 `pipeline=yes` 인지로 연결을 확인할 수 있다.
 
 `seed_demo.py` 는 기존점 4곳까지 넣어 온보딩을 끝내 둔다. 넣지 않으면 심의가
@@ -75,7 +80,7 @@ python3 -m server.bootstrap --org "조직명" --plan team --email you@brand.co.k
 | 환경변수 | 뜻 | 기본값 |
 |---|---|---|
 | `STORE_SCOUT_DB` | SQLite 경로 | `store-scout.sqlite3` |
-| `STORE_SCOUT_PIPELINE` | analysis 디렉터리 | 나란히 클론한 jasons-company 에서 자동 탐색 |
+| `STORE_SCOUT_PIPELINE` | analysis 디렉터리 | `cafe-trade-area/analysis` 자동 탐색 |
 | `STORE_SCOUT_TIMEOUT` | 파이프라인 제한 시간(초) | `600` |
 | `STORE_SCOUT_HTTPS` | 값이 있으면 세션 쿠키에 `Secure` | (없음) |
 | `STORE_SCOUT_PIPELINE_REV` | 도는 알고리즘의 커밋 SHA (`/healthz` 에 표시) | `unknown` |
@@ -147,12 +152,13 @@ python3 -m server.bootstrap --org "조직명" --plan team --email you@brand.co.k
 - **작업 큐.** 지금은 FastAPI 백그라운드 태스크다. 프로세스가 죽으면 실행 중인
   분석이 '실행중' 에서 멈춘다. 여러 대로 늘리려면 큐(RQ·Celery 등)가 필요하다.
 - **속도 제한 · CSRF 토큰.** 폼은 `SameSite=Lax` 쿠키에 기대고 있다.
-- **입력·상담 화면 통합.** 지금은 jasons-company 의 `cafe-trade-area/input`,
-  `consult` 가 별도 정적 페이지다. 조직 계정과 이어지면 CSV 를 손으로 옮기지 않아도 된다.
+- **입력·상담 화면 통합.** `cafe-trade-area/input`, `consult` 는 아직 별도 정적
+  페이지다(서버가 없어 개인정보가 브라우저 밖으로 안 나간다는 장점이 있다).
+  조직 계정과 이어지면 CSV 를 손으로 옮기지 않아도 된다.
 
 ## 배포
 
-컨테이너 하나 + 볼륨 하나. 이미지가 알고리즘을 **커밋 SHA 로 고정해** 담는다 —
+컨테이너 하나 + 볼륨 하나. 이미지가 이 저장소의 알고리즘을 그대로 담는다 —
 브랜치를 따라가면 어제 통과한 후보지가 오늘 부결이 되고 이유를 알 수 없다.
 지금 도는 판은 `GET /healthz` 가 `rev=<SHA>` 로 알려 준다.
 

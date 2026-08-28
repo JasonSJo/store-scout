@@ -25,23 +25,26 @@ from pathlib import Path
 def _find_pipeline() -> Path:
     """analysis 디렉터리를 찾는다.
 
-    이 저장소는 알고리즘을 담지 않는다 — 원본은 jasons-company 한 곳에 둔다.
-    그래서 경로를 밖에서 받아야 하고, 흔한 배치 몇 가지는 알아서 찾아 준다.
+    알고리즘은 이제 이 저장소 안에 있다(cafe-trade-area/analysis). 전에는
+    jasons-company 에 있어 밖에서 경로를 받아야 했는데, 이관하면서 그럴 이유가
+    없어졌다. 그래도 STORE_SCOUT_PIPELINE 은 그대로 존중한다 — 컨테이너는
+    /opt/pipeline 에 두고, 다른 알고리즘 판으로 돌려 보는 일도 있다.
+
     못 찾으면 조용히 넘어가지 않고 available() 이 이유를 말한다.
     """
     env = os.environ.get("STORE_SCOUT_PIPELINE", "").strip()
     if env:
         return Path(env)
     here = Path(__file__).resolve()
+    안 = here.parents[1] / "cafe-trade-area" / "analysis"      # 이 저장소 안
     후보 = [
-        here.parents[2] / "jasons-company" / "cafe-trade-area" / "analysis",  # 나란히 클론
-        here.parents[3] / "jasons-company" / "cafe-trade-area" / "analysis",
-        here.parents[2] / "cafe-trade-area" / "analysis",   # 이관 전 한 저장소 안
+        안,
+        Path("/opt/pipeline/cafe-trade-area/analysis"),        # 컨테이너
     ]
     for c in 후보:
         if (c / "review_sites.py").exists():
             return c
-    return 후보[0]
+    return 안
 
 
 PIPELINE = _find_pipeline()
@@ -50,10 +53,9 @@ TIMEOUT = int(os.environ.get("STORE_SCOUT_TIMEOUT", "600"))
 
 
 def available() -> tuple[bool, str]:
-    안내 = ("상권분석 저장소를 나란히 클론하거나 STORE_SCOUT_PIPELINE 로 경로를 "
-          "지정하십시오:\n"
-          "  git clone https://github.com/JasonSJo/jasons-company\n"
-          "  export STORE_SCOUT_PIPELINE=$PWD/jasons-company/cafe-trade-area/analysis")
+    안내 = ("알고리즘은 이 저장소의 cafe-trade-area/analysis 에 있습니다. 비어 있다면 "
+          "체크아웃이 온전한지 보고, 다른 자리에 두었다면 경로를 지정하십시오:\n"
+          "  export STORE_SCOUT_PIPELINE=$PWD/cafe-trade-area/analysis")
     if not PIPELINE.exists():
         return False, f"파이프라인 디렉터리가 없습니다: {PIPELINE}\n{안내}"
     if not (PIPELINE / "review_sites.py").exists():

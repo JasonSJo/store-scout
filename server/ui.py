@@ -24,8 +24,9 @@ CSS = """
   /* 스스닷컴 측량 도면 — 공개 페이지(shared/base.css)와 같은 값이다.
      제품이 하나면 화면도 하나여야 한다. 전에는 여기만 파란 SaaS 였고,
      로그인하면 딴 사이트에 온 것 같았다.
-     ⚠ 두 저장소에 같은 값이 두 벌 있다. 한쪽만 고치면 조용히 어긋난다 —
-       바꿀 일이 있으면 jasons-company/cafe-trade-area/shared/base.css 도 함께. */
+     ⚠ 같은 값이 두 벌 있다. 한쪽만 고치면 조용히 어긋난다 — 바꿀 일이 있으면
+       cafe-trade-area/shared/base.css 도 함께. (저장소가 하나가 됐으니 언젠가
+       한 파일로 합칠 수 있다.) */
   --bg:#f5f2ea; --soft:#efeae0; --sunken:#e6dfd1;
   --line:#cabfad; --line-2:#ddd4c4;
   --ink:#17130f; --body:#4b423a; --mute:#8a7f6e;

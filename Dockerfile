@@ -1,57 +1,41 @@
-# 출점심의 (store-scout)
+# 스스닷컴 (store-scout.com)
 #
-# 이 이미지는 두 저장소를 담는다. 알고리즘(M1~M6)은 jasons-company 에 있고
-# 이 서비스는 그것을 서브프로세스로 부른다. 런타임에 받아 오지 않고 **빌드 때
-# 고정된 리비전으로 박는다** — 이유는 셋이다.
+# 알고리즘(M1~M6)과 서비스가 한 저장소에 있다. 전에는 알고리즘이 jasons-company 에
+# 있어 빌드 때 고정 리비전으로 받아 왔는데, 그 저장소에서 이관하면서 그럴 이유가
+# 없어졌다 — 이제 이 저장소의 커밋 하나가 곧 알고리즘 판이다.
 #
-#   1. 판정은 알고리즘 판에 따라 달라진다. main 을 따라가면 어제 통과한 후보지가
-#      오늘 부결이 되고, 왜 바뀌었는지 아무도 모른다.
-#   2. 지난 심의를 재현할 수 있어야 한다. 이미지가 곧 알고리즘 판이다.
-#   3. 실행 중에 네트워크를 타지 않는다. 조직 데이터를 다루는 프로세스다.
-#
-# 알고리즘을 올리려면 PIPELINE_REV 를 바꿔 다시 빌드한다. 그 자체가 배포 기록이다.
-
-FROM python:3.11-slim AS pipeline
-
-# 알고리즘 리비전. 반드시 커밋 SHA 로 고정한다 — 브랜치명을 넣으면 빌드마다
-# 다른 알고리즘이 들어가고 이 파일의 목적이 사라진다.
-ARG PIPELINE_REPO=https://github.com/JasonSJo/jasons-company.git
-ARG PIPELINE_REV=6b4ab2431d671d1ebe467607ee109d57ab922b76
-
-RUN apt-get update && apt-get install -y --no-install-recommends git \
-    && rm -rf /var/lib/apt/lists/*
-RUN git init /src \
-    && cd /src \
-    && git remote add origin "$PIPELINE_REPO" \
-    && git fetch --depth 1 origin "$PIPELINE_REV" \
-    && git checkout FETCH_HEAD \
-    # 심의 콘솔(app/)은 사내 한정 자료이고 서버가 쓰지도 않는다. 이미지에 넣지 않는다.
-    && rm -rf /src/cafe-trade-area/app /src/content-agency /src/.git \
-    && test -f /src/cafe-trade-area/analysis/review_sites.py
-
+#   · 판정은 알고리즘 판에 따라 달라진다. 어제 통과한 후보지가 오늘 부결이 되면
+#     왜 바뀌었는지 커밋으로 짚을 수 있어야 한다.
+#   · 지난 심의를 재현할 수 있어야 한다. 이미지가 곧 알고리즘 판이다.
+#   · 실행 중에 네트워크를 타지 않는다. 조직 데이터를 다루는 프로세스다.
 
 FROM python:3.11-slim
 
-ARG PIPELINE_REV=6b4ab2431d671d1ebe467607ee109d57ab922b76
-ENV PYTHONUNBUFFERED=1 \
+# 빌드하는 커밋 SHA. /healthz 가 이 값을 내보내므로, 어떤 알고리즘 판이 그 판정을
+# 냈는지 나중에 짚을 수 있다. CI 가 --build-arg STORE_SCOUT_REV=$GITHUB_SHA 로 넣는다.
+ARG STORE_SCOUT_REV=unknown
+
+ENV STORE_SCOUT_REV=${STORE_SCOUT_REV} \
+    PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     PIP_NO_CACHE_DIR=1 \
     STORE_SCOUT_PIPELINE=/opt/pipeline/cafe-trade-area/analysis \
-    STORE_SCOUT_PIPELINE_REV=${PIPELINE_REV} \
     STORE_SCOUT_DB=/data/store-scout.sqlite3 \
     STORE_SCOUT_HTTPS=1
 
 WORKDIR /app
 
 COPY requirements.txt ./
-COPY --from=pipeline /src/cafe-trade-area/analysis/requirements.txt /tmp/pipeline-requirements.txt
+COPY cafe-trade-area/analysis/requirements.txt /tmp/pipeline-requirements.txt
 # 파이프라인은 서브프로세스로 돌지만 같은 파이썬을 쓴다 — 그쪽 의존성도 함께 넣는다
 RUN pip install --no-cache-dir -r requirements.txt -r /tmp/pipeline-requirements.txt \
     && rm /tmp/pipeline-requirements.txt
 
-COPY --from=pipeline /src/cafe-trade-area /opt/pipeline/cafe-trade-area
+# 심의 콘솔(app/)은 사내 한정 자료이고 서버가 쓰지도 않는다. 이미지에 넣지 않는다.
+COPY cafe-trade-area/analysis /opt/pipeline/cafe-trade-area/analysis
 COPY server ./server
 COPY scripts ./scripts
+RUN test -f /opt/pipeline/cafe-trade-area/analysis/review_sites.py
 
 # 조직 데이터를 다루는 프로세스다. root 로 돌릴 이유가 없다.
 RUN useradd --create-home --uid 10001 scout \

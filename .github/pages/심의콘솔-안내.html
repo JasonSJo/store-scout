@@ -1,0 +1,99 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>심의 콘솔 — 사내 한정</title>
+<meta name="description" content="점포개발 심의 콘솔은 사내 한정 자료라 공개 사이트에 배포하지 않습니다. 저장소를 받아 로컬에서 여십시오."/>
+<meta name="robots" content="noindex"/>
+<meta name="color-scheme" content="light"/>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23efeae0'/%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='%239a3b1b' stroke-width='1.4' stroke-dasharray='3 3'/%3E%3Ccircle cx='16' cy='16' r='3.6' fill='%239a3b1b'/%3E%3C/svg%3E"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Hahmlet:wght@500;700&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+KR:wght@400;500;700&display=swap" rel="stylesheet"/>
+<style>
+  :root{
+    --bg:#efeae0; --card:#f5f2ea; --border:#cabfad;
+    --fg:#17130f; --soft:#4b423a; --mute:#8a7f6e; --sig:#9a3b1b; --no:#a8231c;
+  }
+  *{box-sizing:border-box}
+  body{
+    margin:0; min-height:100vh; background:var(--bg); color:var(--fg);
+    font-family:'IBM Plex Sans KR','Pretendard',-apple-system,'Malgun Gothic',sans-serif;
+    line-height:1.65; letter-spacing:-.01em;
+    display:flex; align-items:center; justify-content:center; padding:32px 20px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)' opacity='.16'/%3E%3C/svg%3E");
+  }
+  main{max-width:660px;width:100%}
+  .mark{
+    width:34px;height:34px;border-radius:50%;background:var(--sig);color:#fff;
+    display:grid;place-items:center;font-family:'IBM Plex Mono',monospace;font-size:17px;
+  }
+  .top{display:flex;align-items:center;gap:11px;margin-bottom:22px}
+  .top b{font-family:'Hahmlet',serif;font-size:17px}
+  .top span{color:var(--mute);font-size:12.5px}
+  .gate{
+    border:1px solid var(--no);border-left-width:3px;background:var(--card);
+    padding:20px 22px;margin-bottom:18px;
+  }
+  .gate h1{
+    margin:0 0 8px;font-family:'Hahmlet',serif;font-size:22px;letter-spacing:-.02em;color:var(--no);
+  }
+  .gate p{margin:0;color:var(--soft);font-size:14px}
+  .card{border:1px solid var(--border);background:var(--card);padding:20px 22px;margin-bottom:14px}
+  .card h2{
+    margin:0 0 10px;font-family:'IBM Plex Mono',monospace;font-size:11px;
+    letter-spacing:.14em;text-transform:uppercase;color:var(--mute);font-weight:500;
+  }
+  .card p{margin:0 0 10px;font-size:14px;color:var(--soft)}
+  .card p:last-child{margin-bottom:0}
+  pre{
+    margin:0;padding:13px 15px;background:var(--bg);border:1px solid var(--border);
+    font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:12.5px;line-height:1.7;
+    color:var(--fg);overflow-x:auto;
+  }
+  a{color:var(--sig);text-decoration:none;border-bottom:1px solid rgba(154,59,27,.35)}
+  a:hover{border-bottom-color:var(--sig)}
+  a:focus-visible{outline:2px solid var(--sig);outline-offset:2px}
+  ul{margin:0;padding-left:19px;font-size:14px;color:var(--soft)}
+  li{margin-bottom:5px}
+  li:last-child{margin-bottom:0}
+  footer{margin-top:20px;font-size:12.5px;color:var(--mute)}
+</style>
+</head>
+<body>
+<main>
+  <div class="top"><div class="mark">◎</div>
+    <div><b>심의 콘솔</b><br><span>점포개발 심의 알고리즘 v1.0</span></div></div>
+
+  <div class="gate">
+    <h1>이 페이지는 공개 배포되지 않습니다</h1>
+    <p>심의 콘솔은 <b>사내 한정 · 대외 배포 금지</b> 자료입니다. 내부 의사결정에 쓰는 판정
+      기준과 매출 추정치를 다루므로, 공개 사이트에는 올리지 않습니다.</p>
+  </div>
+
+  <div class="card">
+    <h2>로컬에서 여는 법</h2>
+    <p>저장소를 받아 <code>cafe-trade-area/app/index.html</code> 을 브라우저로 열면 됩니다.
+      설치·서버·계정이 필요 없습니다.</p>
+    <pre>git clone https://github.com/JasonSJo/jasons-company.git
+cd jasons-company/cafe-trade-area
+open app/index.html          # 또는 브라우저로 파일 열기
+
+# 검수 탭의 'output/ 에서 불러오기' 까지 쓰려면
+python3 -m http.server 8000  # → http://localhost:8000/app/</pre>
+  </div>
+
+  <div class="card">
+    <h2>공개된 것</h2>
+    <ul>
+      <li><a href="../">상권분석 알고리즘 소개</a> — M1~M6 모듈 설계와 한계</li>
+      <li><a href="../README.md">README</a> · <a href="../QUICKSTART.md">QUICKSTART</a> — 실행 순서와 입력 데이터</li>
+      <li><a href="https://github.com/JasonSJo/jasons-company">저장소</a> — 파이프라인 전체 소스와 테스트</li>
+    </ul>
+  </div>
+
+  <footer>가맹희망자에게 제공하는 예상매출액 산정서와 내부 추정치를 혼용하지 마십시오.</footer>
+</main>
+</body>
+</html>

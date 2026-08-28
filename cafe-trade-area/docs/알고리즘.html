@@ -1,0 +1,852 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>상권분석 알고리즘 — 스스닷컴 사내 문서</title>
+<meta name="description" content="등시선으로 상권을 획정하고 Huff 로 경쟁을 배분해 매출을 예측구간으로 추정한 뒤, 부결 트리거로 출점 여부를 심의하는 사내 알고리즘. M1~M6 6개 모듈."/>
+<meta name="color-scheme" content="light"/>
+<meta property="og:title" content="스스닷컴 — 점포개발 상권분석"/>
+<meta property="og:description" content="정량 점수는 보조, 부결 트리거가 실질 방어선. store-scout.com"/>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' fill='%23efeae0'/%3E%3Ccircle cx='16' cy='16' r='11' fill='none' stroke='%239a3b1b' stroke-width='1.4' stroke-dasharray='3 3'/%3E%3Ccircle cx='16' cy='16' r='3.6' fill='%239a3b1b'/%3E%3C/svg%3E"/>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Hahmlet:wght@300;500;700;900&family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans+KR:wght@400;500;600;700&display=swap" rel="stylesheet"/>
+<style>
+/* ═══════════════════════════════════════════════════════════════
+   측량 도면 × 리서치 리포트
+   종이 바탕 · 잉크 먹색 · 로스트 시에나 단일 시그널.
+   수치는 전부 모노스페이스로 조판해 도면의 계측값처럼 읽히게 한다.
+   ═══════════════════════════════════════════════════════════════ */
+:root{
+  --paper:#efeae0;      --paper-2:#e6dfd1;   --paper-3:#dcd3c2;
+  --ink:#17130f;        --ink-soft:#4b423a;  --ink-mute:#8a7f6e;
+  --rule:#cabfad;       --rule-soft:#ded5c5;
+  --roast:#9a3b1b;      --roast-deep:#6f2911;
+  --survey:#2f5d50;     --ochre:#b0822a;     --alert:#a8231c;
+
+  --serif:'Hahmlet','Nanum Myeongjo','Apple SD Gothic Neo','Batang',serif;
+  --sans:'IBM Plex Sans KR','Pretendard',-apple-system,'Malgun Gothic',sans-serif;
+  --mono:'IBM Plex Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+
+  --gut:clamp(20px,5vw,64px);
+  --maxw:1240px;
+}
+
+*{box-sizing:border-box}
+html{scroll-behavior:smooth}
+body{
+  margin:0; background:var(--paper); color:var(--ink);
+  font-family:var(--sans); font-size:16px; line-height:1.62;
+  -webkit-font-smoothing:antialiased; letter-spacing:-.005em;
+  overflow-x:hidden;
+}
+a{color:inherit;text-decoration:none}
+h1,h2,h3,h4{margin:0;font-family:var(--serif);font-weight:700;letter-spacing:-.03em;line-height:1.06}
+p{margin:0}
+
+/* ── 종이 결 + 도면 격자 ───────────────────────────────── */
+.grain{
+  position:fixed; inset:0; z-index:1; pointer-events:none; opacity:.34;
+  mix-blend-mode:multiply;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)' opacity='.42'/%3E%3C/svg%3E");
+}
+.mesh{
+  position:fixed; inset:0; z-index:0; pointer-events:none;
+  background-image:
+    repeating-linear-gradient(to right,transparent 0 95px,var(--rule-soft) 95px 96px),
+    repeating-linear-gradient(to bottom,transparent 0 95px,var(--rule-soft) 95px 96px);
+  opacity:.5;
+  -webkit-mask-image:radial-gradient(120% 90% at 70% 0%,#000 0%,transparent 72%);
+          mask-image:radial-gradient(120% 90% at 70% 0%,#000 0%,transparent 72%);
+}
+
+/* ── 도면 시트 테두리(모서리 십자 + 눈금) ───────────────── */
+.sheet{position:fixed;inset:14px;z-index:3;pointer-events:none;border:1px solid var(--rule)}
+.sheet::before,.sheet::after{
+  content:'';position:absolute;left:0;right:0;height:1px;background:var(--rule);opacity:.55;
+}
+.sheet::before{top:26px} .sheet::after{bottom:26px}
+.cross{position:absolute;width:17px;height:17px}
+.cross::before,.cross::after{content:'';position:absolute;background:var(--roast)}
+.cross::before{left:8px;top:0;width:1px;height:17px}
+.cross::after{top:8px;left:0;height:1px;width:17px}
+.cross.tl{top:-9px;left:-9px} .cross.tr{top:-9px;right:-9px}
+.cross.bl{bottom:-9px;left:-9px} .cross.br{bottom:-9px;right:-9px}
+.sheet .id{
+  position:absolute;bottom:4px;right:12px;font-family:var(--mono);font-size:9.5px;
+  letter-spacing:.16em;color:var(--ink-mute);text-transform:uppercase;
+}
+@media(max-width:820px){.sheet{display:none}}
+
+/* ── 레이아웃 ──────────────────────────────────────────── */
+.wrap{position:relative;z-index:2;max-width:var(--maxw);margin:0 auto;padding:0 var(--gut)}
+section{position:relative;z-index:2}
+
+/* 좌측 여백 칼럼(도면의 표제란처럼) */
+.sec{display:grid;grid-template-columns:120px minmax(0,1fr);gap:0 40px;padding:clamp(64px,10vw,132px) 0}
+.sec + .sec{border-top:1px solid var(--rule)}
+.sec > .tag{position:sticky;top:44px;align-self:start}
+.tag .no{
+  font-family:var(--mono);font-size:11px;font-weight:600;letter-spacing:.2em;
+  color:var(--roast);display:block;
+}
+.tag .nm{
+  font-family:var(--serif);font-size:15px;font-weight:500;color:var(--ink-mute);
+  margin-top:7px;display:block;letter-spacing:.02em;
+}
+.tag .bar{display:block;width:34px;height:1px;background:var(--roast);margin-top:14px}
+.sec > *{min-width:0}
+@media(max-width:900px){
+  .sec{grid-template-columns:minmax(0,1fr);gap:22px}
+  .sec > .tag{position:static;display:flex;align-items:baseline;gap:12px}
+  .tag .nm{margin-top:0} .tag .bar{display:none}
+}
+
+/* ── 마스트헤드 ────────────────────────────────────────── */
+.mast{
+  position:relative;z-index:4;display:flex;align-items:center;gap:18px;
+  padding:26px var(--gut) 0;max-width:var(--maxw);margin:0 auto;flex-wrap:wrap;
+}
+.brand{display:flex;align-items:center;gap:11px}
+.brand svg{display:block}
+.brand b{font-family:var(--serif);font-size:17px;font-weight:700;letter-spacing:-.02em}
+.brand span{
+  font-family:var(--mono);font-size:10px;letter-spacing:.15em;color:var(--ink-mute);
+  text-transform:uppercase;border-left:1px solid var(--rule);padding-left:11px;
+}
+.mast nav{margin-left:auto;display:flex;gap:26px;align-items:center}
+.mast nav a{
+  font-family:var(--mono);font-size:11.5px;letter-spacing:.11em;text-transform:uppercase;
+  color:var(--ink-soft);padding-bottom:3px;border-bottom:1px solid transparent;transition:.18s;
+}
+.mast nav a:hover{color:var(--roast);border-bottom-color:var(--roast)}
+@media(max-width:700px){.mast nav{display:none}}
+
+/* ── 히어로 ────────────────────────────────────────────── */
+.hero{padding:clamp(48px,8vw,92px) 0 clamp(56px,8vw,104px)}
+.hero-grid{display:grid;grid-template-columns:minmax(0,1.1fr) minmax(0,.9fr);gap:clamp(28px,4vw,52px);align-items:center}
+@media(max-width:960px){.hero-grid{grid-template-columns:minmax(0,1fr)}}
+
+.eyebrow{
+  font-family:var(--mono);font-size:11.5px;letter-spacing:.2em;text-transform:uppercase;
+  color:var(--roast);display:flex;align-items:center;gap:12px;
+}
+.eyebrow::after{content:'';height:1px;flex:1;max-width:120px;background:var(--roast);opacity:.4}
+
+/* 계단식 3행 — 한 행을 짧게 끊어 자간을 크게 가져가되 줄바꿈이 우연에 맡겨지지 않게 한다.
+   Hahmlet 은 900 에서 한글이 슬래브처럼 둔탁해져 700 으로 고정한다. */
+h1{
+  font-size:clamp(2.7rem,7.1vw,5.3rem);font-weight:700;line-height:.99;
+  margin:28px 0 0;letter-spacing:-.042em;
+}
+h1 span{display:block}
+h1 .l2{padding-left:clamp(0px,3.4vw,58px)}
+h1 .l3{padding-left:clamp(0px,6.8vw,116px);color:var(--roast)}
+.lede{
+  margin-top:28px;max-width:46ch;font-size:clamp(15.5px,1.5vw,17.5px);
+  color:var(--ink-soft);line-height:1.72;
+}
+.lede b{color:var(--ink);font-weight:600}
+
+.acts{display:flex;gap:12px;margin-top:34px;flex-wrap:wrap}
+.btn{
+  font-family:var(--mono);font-size:12.5px;font-weight:500;letter-spacing:.09em;
+  text-transform:uppercase;padding:14px 24px;border:1px solid var(--ink);
+  display:inline-flex;align-items:center;gap:10px;transition:.2s;background:transparent;
+}
+.btn .ar{transition:transform .22s}
+.btn:hover .ar{transform:translateX(4px)}
+.btn.solid{background:var(--ink);color:var(--paper);border-color:var(--ink)}
+.btn.solid:hover{background:var(--roast);border-color:var(--roast)}
+.btn.line:hover{border-color:var(--roast);color:var(--roast)}
+
+.facts{
+  display:flex;gap:0;margin-top:46px;border-top:1px solid var(--rule);flex-wrap:wrap;
+}
+.fact{padding:18px 26px 0 0;margin-right:26px;border-right:1px solid var(--rule);flex:0 0 auto}
+.fact:last-child{border-right:0}
+.fact b{display:block;font-family:var(--mono);font-size:26px;font-weight:600;letter-spacing:-.03em}
+.fact span{display:block;font-size:12px;color:var(--ink-mute);margin-top:3px;letter-spacing:.01em}
+
+/* ── 히어로 도면 ───────────────────────────────────────── */
+.plat{position:relative;margin-right:calc(var(--gut) * -.55)}
+@media(max-width:960px){.plat{margin-right:0;max-width:440px}}
+.plat svg{width:100%;height:auto;overflow:visible}
+.ring{fill:none;stroke:var(--roast);stroke-width:1.4;stroke-dasharray:6 6;opacity:.72}
+.ring-anim{stroke-dasharray:1257;stroke-dashoffset:1257;animation:draw 1.5s cubic-bezier(.22,.9,.3,1) .25s forwards}
+.ring-anim.inner{stroke-dasharray:629;stroke-dashoffset:629;animation-delay:.45s;animation-duration:1.2s}
+@keyframes draw{to{stroke-dashoffset:0}}
+.axis{stroke:var(--rule);stroke-width:1.2}
+.axis-anim{stroke-dasharray:520;stroke-dashoffset:520;animation:draw 1.1s ease-out .1s forwards}
+.poi{opacity:0;animation:pop .5s cubic-bezier(.34,1.56,.64,1) forwards}
+@keyframes pop{from{opacity:0;transform:scale(.2)}to{opacity:1;transform:scale(1)}}
+.mk{font-family:var(--mono);font-size:11px;fill:var(--ink-mute);letter-spacing:.1em}
+.mk-anim{opacity:0;animation:fade .6s ease-out forwards}
+@keyframes fade{to{opacity:1}}
+.core{transform-origin:center;animation:pulse 3.4s ease-in-out 1.8s infinite}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.09)}}
+
+/* ── 본문 타이포 ───────────────────────────────────────── */
+h2{font-size:clamp(2rem,4.2vw,3.15rem);font-weight:700;letter-spacing:-.04em;max-width:22ch}
+h2 .hl{color:var(--roast)}
+.sub{margin-top:20px;max-width:58ch;color:var(--ink-soft);font-size:16px;line-height:1.74}
+.sub + .sub{margin-top:14px}
+code{
+  font-family:var(--mono);font-size:.88em;background:var(--paper-2);
+  border:1px solid var(--rule-soft);padding:1px 6px;white-space:nowrap;
+}
+
+/* ── 대조(폐기 vs 현행) ────────────────────────────────── */
+.vs{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0;margin-top:42px;border:1px solid var(--rule)}
+@media(max-width:800px){.vs{grid-template-columns:minmax(0,1fr)}}
+.vs > div{padding:28px 30px;min-width:0}
+.vs .old{background:var(--paper-2);border-right:1px solid var(--rule);position:relative}
+@media(max-width:800px){.vs .old{border-right:0;border-bottom:1px solid var(--rule)}}
+.vs h4{
+  font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.18em;
+  text-transform:uppercase;display:flex;align-items:center;gap:8px;
+}
+.vs .old h4{color:var(--ink-mute)}
+.vs .new h4{color:var(--survey)}
+.calc{margin-top:20px;font-family:var(--mono);font-size:13px;line-height:2.1;color:var(--ink-soft)}
+.calc s{color:var(--ink-mute);text-decoration-color:var(--alert);text-decoration-thickness:1px}
+.out{
+  margin-top:20px;padding-top:18px;border-top:1px solid var(--rule);
+  font-family:var(--mono);font-weight:600;letter-spacing:-.02em;
+  display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+}
+.out .n{font-size:clamp(26px,3.6vw,38px)}
+.vs .old .out .n{color:var(--ink-mute);text-decoration:line-through;text-decoration-color:var(--alert)}
+.vs .new .out .n{color:var(--roast)}
+.out .u{font-size:13px;color:var(--ink-mute);font-weight:400}
+.verdict{margin-top:14px;font-size:13px;line-height:1.65;color:var(--ink-soft)}
+.verdict b{color:var(--alert);font-weight:600}
+.vs .new .verdict b{color:var(--survey)}
+
+/* ── 채점 항목 ─────────────────────────────────────────── */
+.rubric{margin-top:44px;border-top:1px solid var(--ink)}
+.row{
+  display:grid;grid-template-columns:26px minmax(96px,1fr) minmax(0,2.1fr) 74px;
+  gap:20px;align-items:center;padding:19px 0;border-bottom:1px solid var(--rule);
+}
+@media(max-width:760px){
+  .row{grid-template-columns:22px 1fr 60px;gap:12px}
+  .row .desc{grid-column:2/-1;grid-row:2}
+}
+.row .i{font-family:var(--mono);font-size:11px;color:var(--ink-mute)}
+.row .nm{font-family:var(--serif);font-size:19px;font-weight:700;letter-spacing:-.02em}
+.row .desc{font-size:13.5px;color:var(--ink-mute);line-height:1.55}
+.row .pt{text-align:right;font-family:var(--mono);font-weight:600;font-size:15px;position:relative}
+.row .pt::after{
+  content:'';position:absolute;right:0;bottom:-19px;height:2px;background:var(--roast);
+  width:var(--w,0);transition:width 1s cubic-bezier(.22,.9,.3,1);
+}
+.rubric.on .row .pt::after{width:var(--w)}
+.row.total{border-bottom:2px solid var(--ink);padding-top:22px}
+.row.total .nm,.row.total .pt{color:var(--roast)}
+
+/* ── 공식 ──────────────────────────────────────────────── */
+.formula{margin-top:42px;display:grid;gap:1px;background:var(--rule);border:1px solid var(--rule)}
+.step{background:var(--paper);padding:26px 30px;display:grid;grid-template-columns:44px minmax(0,1fr);gap:22px;align-items:start}
+@media(max-width:700px){.step{grid-template-columns:minmax(0,1fr);gap:12px}}
+.step .s{
+  font-family:var(--mono);font-size:11px;font-weight:600;color:var(--paper);
+  background:var(--ink);width:26px;height:26px;display:grid;place-items:center;
+}
+.step h4{font-family:var(--serif);font-size:20px;font-weight:700;letter-spacing:-.02em}
+.step .eq{
+  margin-top:12px;font-family:var(--mono);font-size:13.5px;line-height:1.95;
+  color:var(--ink-soft);word-break:keep-all;
+}
+.step .eq b{color:var(--roast);font-weight:600}
+.step .note{margin-top:11px;font-size:13.5px;color:var(--ink-mute);line-height:1.66;max-width:60ch}
+.step .note b{color:var(--ink-soft);font-weight:600}
+.tagx{font-family:var(--mono);font-size:10px;letter-spacing:.12em;color:var(--roast);
+  border:1px solid var(--roast);padding:1px 6px;margin-left:8px;vertical-align:2px;font-weight:500}
+
+/* ── 산출 테이블 ───────────────────────────────────────── */
+.tbl-wrap{margin-top:42px;overflow-x:auto;border-top:1px solid var(--ink)}
+table{border-collapse:collapse;width:100%;min-width:880px}
+th{
+  font-family:var(--mono);font-size:10px;font-weight:600;letter-spacing:.14em;
+  text-transform:uppercase;color:var(--ink-mute);text-align:left;
+  padding:13px 12px 13px 0;border-bottom:1px solid var(--rule);white-space:nowrap;
+}
+th.n,td.n{text-align:right;padding-right:16px}
+tr > *:last-child{padding-right:0}
+td{padding:17px 12px 17px 0;border-bottom:1px solid var(--rule-soft);vertical-align:middle}
+td.n{font-family:var(--mono);font-weight:500;font-variant-numeric:tabular-nums}
+tbody tr{transition:background .16s}
+tbody tr:hover{background:var(--paper-2)}
+tbody tr td:first-child{position:relative;padding-left:16px}
+tbody tr td:first-child::before{
+  content:'';position:absolute;left:0;top:0;bottom:0;width:2px;background:var(--roast);
+  transform:scaleY(0);transform-origin:center;transition:transform .2s;
+}
+tbody tr:hover td:first-child::before{transform:scaleY(1)}
+.site{font-family:var(--serif);font-size:17px;font-weight:700;letter-spacing:-.02em}
+.site small{display:block;font-family:var(--sans);font-size:11.5px;font-weight:400;color:var(--ink-mute);letter-spacing:0;margin-top:2px}
+.gr{
+  display:inline-grid;place-items:center;width:21px;height:21px;font-family:var(--mono);
+  font-size:11px;font-weight:600;color:var(--paper);vertical-align:-4px;margin-right:9px;
+}
+.gr.A{background:var(--survey)} .gr.B{background:var(--ink)}
+.gr.C{background:var(--ochre)} .gr.D{background:var(--alert)}
+.neg{color:var(--alert)}
+.vd{font-family:var(--mono);font-size:10.5px;font-weight:600;letter-spacing:.1em;white-space:nowrap}
+.vd.pass{color:var(--survey)} .vd.hold{color:var(--ochre)} .vd.deny{color:var(--alert)}
+tr.denied{background:rgba(168,35,28,.045)}
+tr.denied .site{color:var(--alert)}
+.tbl-note{margin-top:18px;font-size:13px;color:var(--ink-mute);line-height:1.7;max-width:66ch}
+.tbl-note b{color:var(--alert);font-weight:600}
+
+/* ── 실행 경로 ─────────────────────────────────────────── */
+.paths{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:0;margin-top:42px;border:1px solid var(--rule)}
+@media(max-width:800px){.paths{grid-template-columns:minmax(0,1fr)}}
+.path{padding:30px;min-width:0}
+.path:first-child{border-right:1px solid var(--rule)}
+@media(max-width:800px){.path:first-child{border-right:0;border-bottom:1px solid var(--rule)}}
+.path h4{font-family:var(--serif);font-size:21px;font-weight:700;letter-spacing:-.025em}
+.path .kick{font-family:var(--mono);font-size:10px;letter-spacing:.16em;text-transform:uppercase;color:var(--roast);display:block;margin-bottom:9px}
+.path p{margin-top:12px;font-size:14px;color:var(--ink-soft);line-height:1.7}
+pre{
+  margin:18px 0 0;background:var(--ink);color:#e8e0d2;padding:17px 18px;overflow-x:auto;
+  font-family:var(--mono);font-size:12.5px;line-height:1.85;
+}
+pre .c{color:#9a8f7c}
+pre .f{color:#e0a877}
+.guard{
+  margin-top:42px;border:1px solid var(--ink);padding:30px;background:var(--paper-2);
+  display:grid;grid-template-columns:auto 1fr;gap:24px;align-items:start;
+}
+@media(max-width:700px){.guard{grid-template-columns:minmax(0,1fr);gap:16px}}
+.guard .seal{
+  width:78px;height:78px;border:1px solid var(--roast);border-radius:50%;
+  display:grid;place-items:center;text-align:center;font-family:var(--mono);
+  font-size:9px;line-height:1.4;letter-spacing:.1em;color:var(--roast);
+}
+.guard h4{font-family:var(--serif);font-size:21px;font-weight:700;letter-spacing:-.025em}
+.guard p{margin-top:11px;font-size:14px;color:var(--ink-soft);line-height:1.72;max-width:62ch}
+
+/* ── CTA ───────────────────────────────────────────────── */
+.cta{
+  position:relative;z-index:2;background:var(--ink);color:var(--paper);
+  margin-top:clamp(64px,9vw,120px);padding:clamp(60px,9vw,110px) 0;
+}
+.cta h2{max-width:18ch;color:var(--paper)}
+.cta h2 .hl{color:#e0a877}
+.cta .sub{color:#c3b8a5}
+.cta .btn{border-color:#6a5f50;color:var(--paper)}
+.cta .btn.solid{background:var(--paper);color:var(--ink);border-color:var(--paper)}
+.cta .btn.solid:hover{background:#e0a877;border-color:#e0a877}
+.cta .btn.line:hover{border-color:#e0a877;color:#e0a877}
+.cta .sec{border-top:0}
+.cta .tag .no,.cta .tag .bar{color:#e0a877;background:none}
+.cta .tag .bar{background:#e0a877}
+.cta .tag .nm{color:#8d8271}
+
+/* ── 푸터 ──────────────────────────────────────────────── */
+footer{position:relative;z-index:2;padding:44px 0 64px;border-top:1px solid var(--rule)}
+.disc{
+  font-size:12.5px;color:var(--ink-mute);line-height:1.8;max-width:76ch;
+  padding-left:16px;border-left:2px solid var(--ochre);
+}
+.fbar{
+  margin-top:30px;display:flex;gap:22px;flex-wrap:wrap;align-items:center;
+  font-family:var(--mono);font-size:11px;letter-spacing:.11em;text-transform:uppercase;color:var(--ink-mute);
+}
+.fbar a:hover{color:var(--roast)}
+.fbar .sp{margin-left:auto}
+@media(max-width:640px){.fbar .sp{margin-left:0}}
+
+/* ── 거버넌스 배너 ─────────────────────────── */
+.gov{
+  border:1px solid var(--alert); border-left-width:4px; padding:16px 20px;
+  background:var(--paper-2); display:flex; flex-direction:column; gap:6px;
+}
+.gov b{font-family:var(--mono);font-size:11px;letter-spacing:.16em;color:var(--alert)}
+.gov span{font-size:13px;color:var(--ink-soft);line-height:1.7;max-width:78ch}
+
+/* ── 스크롤 등장 ───────────────────────────────────────── */
+.rv{opacity:0;transform:translateY(22px);transition:opacity .8s cubic-bezier(.22,.9,.3,1),transform .8s cubic-bezier(.22,.9,.3,1)}
+.rv.in{opacity:1;transform:none}
+.rv.d1{transition-delay:.09s} .rv.d2{transition-delay:.18s} .rv.d3{transition-delay:.27s}
+
+@media(prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+  .rv{opacity:1;transform:none}
+  .ring-anim,.axis-anim{stroke-dashoffset:0}
+  .poi,.mk-anim{opacity:1}
+  .rubric .row .pt::after{width:var(--w)}
+  html{scroll-behavior:auto}
+}
+</style>
+</head>
+<body>
+
+<div class="mesh" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+<div class="sheet" aria-hidden="true">
+  <i class="cross tl"></i><i class="cross tr"></i><i class="cross bl"></i><i class="cross br"></i>
+  <span class="id">SHEET 01 — TRADE AREA / CAFE FRANCHISE</span>
+</div>
+
+<header class="mast">
+  <a class="brand" href="../">
+    <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true">
+      <circle cx="13" cy="13" r="11" fill="none" stroke="#9a3b1b" stroke-width="1.2" stroke-dasharray="3 3"/>
+      <circle cx="13" cy="13" r="5.5" fill="none" stroke="#9a3b1b" stroke-width="1" opacity=".55"/>
+      <circle cx="13" cy="13" r="3" fill="#9a3b1b"/>
+    </svg>
+    <b>스스닷컴</b><span>store-scout.com</span>
+  </a>
+  <nav>
+    <a href="#problem">문제</a>
+    <a href="#pipeline">파이프라인</a>
+    <a href="#verdict">판정</a>
+    <a href="#proof">산출</a>
+    <a href="#limits">한계</a>
+    <a href="../consult/">고객 상담</a>
+    <a href="../input/">데이터 입력</a>
+    <a href="../app/index.html">콘솔 ↗</a>
+  </nav>
+</header>
+
+<div class="wrap" style="padding-top:22px">
+  <div class="gov">
+    <b>사내 문서 · 배포되지 않습니다</b>
+    <span>알고리즘 내부 설명입니다 — 스스닷컴 공개 사이트(store-scout.com)가 아니라
+      저장소 안에만 있습니다. 본 산출물은 내부 의사결정 자료이므로, 가맹희망자에게
+      제공하는 예상매출액 산정서와 수치를 혼용하지 마십시오. 제공치가 내부 중앙값
+      추정치를 초과하지 않도록 별도 통제해야 합니다.</span>
+  </div>
+</div>
+
+<main class="wrap">
+
+  <!-- ══════════ 히어로 ══════════ -->
+  <section class="hero">
+    <div class="hero-grid">
+      <div>
+        <div class="eyebrow rv">커피 프랜차이즈 점포개발 심의</div>
+        <h1 class="rv d1"><span>이 자리를</span><span class="l2">열어도</span><span class="l3">되는가</span></h1>
+        <p class="lede rv d2">
+          보행 <b>등시선</b>으로 상권을 긋고, <b>Huff 모델</b>로 경쟁을 배분하고,
+          매출을 점추정이 아닌 <b>예측구간</b>으로 냅니다. 그리고 통과 여부는
+          점수가 아니라 <b>부결 트리거</b>가 정합니다 — 정량 점수는 보조입니다.
+        </p>
+        <div class="acts rv d3">
+          <a class="btn solid" href="../app/index.html">콘솔 열기 <span class="ar">→</span></a>
+          <a class="btn line" href="../README.md">알고리즘 문서 <span class="ar">→</span></a>
+        </div>
+        <div class="facts rv d3">
+          <div class="fact"><b>6</b><span>모듈 · M1~M6</span></div>
+          <div class="fact"><b>4</b><span>치명 플래그 · 단독 부결</span></div>
+          <div class="fact"><b>89</b><span>검증 테스트</span></div>
+        </div>
+      </div>
+
+      <!-- 반경 도면 -->
+      <div class="plat rv d2" aria-label="후보지 반경 500미터 경쟁 분포 개념도">
+        <svg viewBox="0 0 520 520" role="img">
+          <title>후보지를 원점에 둔 반경 500m 경쟁 분포도</title>
+          <!-- 좌표 눈금 -->
+          <g stroke="#cabfad" stroke-width="1">
+            <path d="M20 20h26M20 20v26M500 20h-26M500 20v26M20 500h26M20 500v-26M500 500h-26M500 500v-26"/>
+          </g>
+          <line class="axis axis-anim" x1="0" y1="260" x2="520" y2="260"/>
+          <line class="axis axis-anim" x1="260" y1="0" x2="260" y2="520" style="animation-delay:.2s"/>
+          <circle cx="260" cy="260" r="200" fill="#9a3b1b" opacity=".055"/>
+          <circle cx="260" cy="260" r="100" fill="#9a3b1b" opacity=".04"/>
+          <circle class="ring ring-anim" cx="260" cy="260" r="200"/>
+          <circle class="ring ring-anim inner" cx="260" cy="260" r="100"/>
+          <text class="mk mk-anim" x="266" y="54" style="animation-delay:1.5s">500m</text>
+          <text class="mk mk-anim" x="266" y="154" style="animation-delay:1.6s">250m</text>
+
+          <!-- 경쟁 POI: 붉은=동일포지션 · 황토=앵커 · 회색=일반 -->
+          <g>
+            <circle class="poi" cx="220" cy="340" r="5" fill="#a8231c" style="animation-delay:1.05s"/>
+            <circle class="poi" cx="217" cy="200" r="5" fill="#a8231c" style="animation-delay:1.10s"/>
+            <circle class="poi" cx="140" cy="233" r="5" fill="#a8231c" style="animation-delay:1.15s"/>
+            <circle class="poi" cx="392" cy="310" r="5" fill="#a8231c" style="animation-delay:1.20s"/>
+            <circle class="poi" cx="386" cy="290" r="4.5" fill="#b0822a" style="animation-delay:1.25s"/>
+            <circle class="poi" cx="332" cy="294" r="4.5" fill="#b0822a" style="animation-delay:1.30s"/>
+            <circle class="poi" cx="109" cy="338" r="4.5" fill="#b0822a" style="animation-delay:1.35s"/>
+            <circle class="poi" cx="331" cy="330" r="3.4" fill="#8a7f6e" style="animation-delay:1.40s"/>
+            <circle class="poi" cx="127" cy="123" r="3.4" fill="#8a7f6e" style="animation-delay:1.44s"/>
+            <circle class="poi" cx="147" cy="201" r="3.4" fill="#8a7f6e" style="animation-delay:1.48s"/>
+            <circle class="poi" cx="317" cy="251" r="3.4" fill="#8a7f6e" style="animation-delay:1.52s"/>
+            <circle class="poi" cx="330" cy="174" r="3.4" fill="#8a7f6e" style="animation-delay:1.56s"/>
+            <circle class="poi" cx="308" cy="321" r="3.4" fill="#8a7f6e" style="animation-delay:1.60s"/>
+            <circle class="poi" cx="196" cy="426" r="3.4" fill="#8a7f6e" style="animation-delay:1.64s"/>
+            <circle class="poi" cx="324" cy="398" r="3.4" fill="#8a7f6e" style="animation-delay:1.68s"/>
+            <circle class="poi" cx="180" cy="165" r="3.4" fill="#8a7f6e" style="animation-delay:1.72s"/>
+            <circle class="poi" cx="200" cy="242" r="3.4" fill="#8a7f6e" style="animation-delay:1.76s"/>
+            <circle class="poi" cx="349" cy="295" r="3.4" fill="#8a7f6e" style="animation-delay:1.80s"/>
+            <circle class="poi" cx="204" cy="141" r="3.4" fill="#8a7f6e" style="animation-delay:1.84s"/>
+            <circle class="poi" cx="200" cy="400" r="3.4" fill="#8a7f6e" style="animation-delay:1.88s"/>
+            <circle class="poi" cx="152" cy="293" r="3.4" fill="#8a7f6e" style="animation-delay:1.92s"/>
+            <circle class="poi" cx="306" cy="101" r="3.4" fill="#8a7f6e" style="animation-delay:1.96s"/>
+            <circle class="poi" cx="266" cy="411" r="3.4" fill="#8a7f6e" style="animation-delay:2.00s"/>
+            <circle class="poi" cx="78" cy="231" r="3.4" fill="#8a7f6e" style="animation-delay:2.04s"/>
+          </g>
+
+          <!-- 후보지 -->
+          <g class="core">
+            <circle cx="260" cy="260" r="17" fill="none" stroke="#9a3b1b" stroke-width="1" opacity=".45"/>
+            <circle cx="260" cy="260" r="8" fill="#9a3b1b"/>
+          </g>
+          <text class="mk mk-anim" x="260" y="300" text-anchor="middle" fill="#9a3b1b" style="animation-delay:2.1s;letter-spacing:.14em">SITE</text>
+        </svg>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════ 01 문제 ══════════ -->
+  <section class="sec" id="problem">
+    <div class="tag"><span class="no">01</span><span class="nm">문제</span><span class="bar"></span></div>
+    <div>
+      <h2 class="rv">반경 300m 원은 <span class="hl">상권이 아닙니다</span></h2>
+      <p class="sub rv d1">
+        커피는 유효 상권이 좁습니다. 반경 300m 안이어도 <b>6차선 도로에 횡단보도가 없거나,
+        하천·철로·옹벽이 지나가거나, 경사가 10%를 넘으면</b> 그쪽 수요는 0 에 수렴합니다.
+        원으로 그린 상권은 그 사실을 통째로 놓칩니다.
+      </p>
+      <p class="sub rv d1">
+        그래서 M1 은 OSM 보행 네트워크(4km/h)로 <b>등시선</b> P5·P10 을 긋고,
+        단절 요소를 barrier 로 미리 제거한 뒤 <b>잔존율 R</b> 을 냅니다.
+        같은 10분이라도 실제로 걸어 닿는 면적이 얼마나 남는지가 R 입니다.
+      </p>
+
+      <div class="vs rv d2">
+        <div class="old">
+          <h4><span>✕</span> 반경법</h4>
+          <div class="calc">
+            반경 <s>500m</s> 원<br/>
+            = 면적 78.5ha<br/>
+            <span style="color:var(--alert)">·</span> 단절 요소 반영 없음<br/>
+            <span style="color:var(--alert)">·</span> 모든 후보지가 같은 크기
+          </div>
+          <div class="out"><span class="n">R = —</span></div>
+          <p class="verdict"><b>변별 불가.</b> 강 건너편도, 6차선 반대편도
+            같은 상권으로 셉니다.</p>
+        </div>
+        <div class="new">
+          <h4><span>✓</span> 등시선 · 잔존율</h4>
+          <div class="calc">
+            P10 = 보행 10분 도달 폴리곤<br/>
+            R = area(P10) ÷ (π × 667m²)<br/>
+            <span style="color:var(--survey)">·</span> 목동 아파트단지 R = 0.74<br/>
+            <span style="color:var(--survey)">·</span> 신림 학원가 &nbsp;&nbsp;&nbsp;R = 0.52
+          </div>
+          <div class="out"><span class="n">0.52~0.74</span><span class="u">예시 6곳</span></div>
+          <p class="verdict"><b>같은 10분이 다른 면적입니다.</b> 신림은 도달 가능 면적의
+            48%가 단절로 날아갑니다.</p>
+        </div>
+      </div>
+
+      <p class="tbl-note rv" style="margin-top:22px">
+        등시선을 확보하지 못하면 원형으로 폴백하지만, 그때는 산출물 전체에 경고가 붙습니다.
+        명세가 <b>오차의 가장 큰 부분을 흡수한다</b>고 지목한 단계를 건너뛴 상태이기 때문입니다.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══════════ 02 파이프라인 ══════════ -->
+  <section class="sec" id="pipeline">
+    <div class="tag"><span class="no">02</span><span class="nm">파이프라인</span><span class="bar"></span></div>
+    <div>
+      <h2 class="rv">여섯 모듈</h2>
+      <p class="sub rv d1">
+        M1 이 상권을 긋고, M2 가 그 안의 수요를 세고, M3 이 경쟁과 나누고, M4 가 매출을
+        추정하고, M5 가 판정합니다. <b>M6 는 선택이 아닙니다</b> — 실적으로 계수를 교정하지
+        않으면 앞의 다섯이 스스로를 검증할 방법이 없습니다.
+      </p>
+
+      <div class="formula rv d2">
+        <div class="step"><span class="s">1</span><div>
+          <h4>상권 획정 <span class="tagx">M1</span></h4>
+          <div class="eq">R = area(P10) ÷ (π × <b>667m</b>²)</div>
+          <p class="note">보행 등시선 P5·P10. barrier(횡단보도 없는 6차선 이상·하천·철로·
+            옹벽·경사 10% 초과)는 폴리곤 생성 단계에서 제거합니다.</p>
+        </div></div>
+        <div class="step"><span class="s">2</span><div>
+          <h4>수요 변수 <span class="tagx">M2</span></h4>
+          <div class="eq">D_am_adj = D_am_같은편 + ( D_am_반대편 × <b>0.3</b> )</div>
+          <p class="note">100m 격자 인구를 등시선과 면적 가중 교차해 H·W 를 냅니다.
+            유동인구는 출근 진행 방향과 도로 좌·우로 나눠 횡단저항을 적용합니다.</p>
+        </div></div>
+        <div class="step"><span class="s">3</span><div>
+          <h4>경쟁 배분 <span class="tagx">M3</span></h4>
+          <div class="eq">S_i = ( A_i / d_i^<b>λ</b> ) ÷ Σ ( A_j / d_j^<b>λ</b> ) &nbsp;·&nbsp; A = 좌석수^0.5 × 브랜드가중</div>
+          <p class="note">Huff 모델. 거리는 직선이 아니라 보행 네트워크 거리입니다.
+            수요가 상권에 흩어져 있으므로 격자마다 점유율을 구해 수요로 가중평균합니다.</p>
+        </div></div>
+        <div class="step"><span class="s">4</span><div>
+          <h4>매출 추정 <span class="tagx">M4</span></h4>
+          <div class="eq">Mode A ( n ≥ 15 ) 로그선형 회귀 &nbsp;/&nbsp; Mode B ( n &lt; 15 ) 기준점포 앵커링</div>
+          <p class="note">출력은 점추정이 아니라 <b>예측구간</b>입니다. 하한·중앙·상한을
+            out-of-fold 잔차의 25/50/75 분위로 만듭니다 — 정규성을 가정하지 않고
+            실제로 빗나간 만큼만 벌립니다. <b>중앙값이 심의 기준값</b>입니다.</p>
+        </div></div>
+        <div class="step"><span class="s">5</span><div>
+          <h4>판정 <span class="tagx">M5</span></h4>
+          <div class="eq">BEP = F ÷ ( 1 − v ) &nbsp;·&nbsp; margin = ( R_median − BEP ) ÷ R_median</div>
+          <p class="note">통과 / 보류 / 부결 3단. 자기잠식은 등시선 중첩률로 잽니다 —
+            overlap × 기존점 매출 × κ.</p>
+        </div></div>
+        <div class="step"><span class="s">6</span><div>
+          <h4>사후 보정 <span class="tagx">M6</span></h4>
+          <div class="eq">MAPE &gt; <b>20%</b> 가 <b>3건 연속</b> → 모델 재적합</div>
+          <p class="note">개점 후 6·12개월 실매출로 λ·κ·횡단저항을 교정합니다.
+            <b>계수를 자동으로 바꾸지 않습니다</b> — 제안서를 내고 사람이 반영합니다.
+            심의 기준이 아무도 모르게 바뀌는 쪽이 더 위험합니다.</p>
+        </div></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ══════════ 03 판정 ══════════ -->
+  <section class="sec" id="verdict">
+    <div class="tag"><span class="no">03</span><span class="nm">판정</span><span class="bar"></span></div>
+    <div>
+      <h2 class="rv">점수는 보조입니다.<br/><span class="hl">부결 트리거가 방어선입니다</span></h2>
+      <p class="sub rv d1">
+        추정 매출은 틀릴 수 있습니다. 그래서 통과 여부를 점수에 걸지 않습니다.
+        아래 네 항목은 <b>점수·매출과 무관하게 단독으로</b> 부결시킵니다.
+      </p>
+
+      <div class="rubric rv d2">
+        <div class="row"><span class="i">⛔</span><span class="nm">근저당 과다</span>
+          <span class="desc">등기부상 선순위 권리로 보증금 회수가 불확실한 물건</span>
+          <span class="pt">부결</span></div>
+        <div class="row"><span class="i">⛔</span><span class="nm">임대인 불일치</span>
+          <span class="desc">등기부상 소유자와 계약 상대가 다름 — 전대차 구조·자기거래 정황</span>
+          <span class="pt">부결</span></div>
+        <div class="row"><span class="i">⛔</span><span class="nm">소송 계류</span>
+          <span class="desc">명도 분쟁·소송이 걸려 있는 물건</span>
+          <span class="pt">부결</span></div>
+        <div class="row"><span class="i">⛔</span><span class="nm">인허가 불가</span>
+          <span class="desc">용도지역·정화조 용량 등으로 휴게음식점 인허가가 나지 않음</span>
+          <span class="pt">부결</span></div>
+        <div class="row total"><span class="i">△</span><span class="nm">안전마진</span>
+          <span class="desc">margin &lt; 15% 부결 · margin &lt; 30% 또는 하한 시나리오 적자면 보류</span>
+          <span class="pt">15 / 30</span></div>
+      </div>
+
+      <p class="tbl-note rv" style="margin-top:22px">
+        예시의 <b>홍대 어울마당로</b>는 margin 41.8% 로 수익성 기준을 통과하지만
+        명도 분쟁이 걸려 있어 <b>부결</b>입니다. 실사 칸이 비어 있으면 '통과'에도
+        <b>잠정</b> 표시가 붙습니다 — 실사 전 통과는 통과가 아닙니다.
+      </p>
+    </div>
+  </section>
+
+  <!-- ══════════ 04 산출 ══════════ -->
+  <section class="sec" id="proof">
+    <div class="tag"><span class="no">04</span><span class="nm">산출</span><span class="bar"></span></div>
+    <div>
+      <h2 class="rv">예시 6곳, <span class="hl">실제 심의표</span></h2>
+      <p class="sub rv d1">
+        <code>./run_all.sh</code> 가 낸 값입니다. Mode A(회귀) · 유효표본 16 ·
+        R² 0.938 · LOOCV MAPE 16.9%. 금액 단위 만원.
+      </p>
+
+      <div class="tbl-wrap rv d2">
+        <table>
+          <thead><tr><th>판정</th><th>후보지</th><th class="n">S</th><th class="n">R</th>
+            <th class="n">Huff</th><th class="n">월매출(중앙)</th><th class="n">BEP</th>
+            <th class="n">margin</th><th>사유</th></tr></thead>
+          <tbody>
+            <tr><td><span class="vd hold">△ 보류</span></td>
+              <td><span class="site">강남역 11번출구<small>예측구간 4,438~5,490</small></span></td>
+              <td class="n">59.0</td><td class="n">0.55</td><td class="n">2.81%</td>
+              <td class="n">5,175</td><td class="n">2,430</td><td class="n">53.0%</td>
+              <td class="why">S 59.0 &lt; 70 · 자사 상권 중첩 52% &gt; 30%</td></tr>
+            <tr><td><span class="vd hold">△ 보류</span></td>
+              <td><span class="site">성수 연무장길<small>예측구간 3,071~3,799</small></span></td>
+              <td class="n">55.5</td><td class="n">0.62</td><td class="n">8.27%</td>
+              <td class="n">3,581</td><td class="n">1,832</td><td class="n">48.8%</td>
+              <td class="why">S 55.5 &lt; 70</td></tr>
+            <tr><td><span class="vd hold">△ 보류</span></td>
+              <td><span class="site">판교 유스페이스<small>예측구간 2,917~3,609</small></span></td>
+              <td class="n">47.2</td><td class="n">0.66</td><td class="n">5.78%</td>
+              <td class="n">3,402</td><td class="n">2,299</td><td class="n">32.4%</td>
+              <td class="why">S 47.2 &lt; 70</td></tr>
+            <tr class="denied"><td><span class="vd deny">✕ 부결</span></td>
+              <td><span class="site">홍대 어울마당로<small>수익성은 통과 · 권리관계로 탈락</small></span></td>
+              <td class="n">48.1</td><td class="n">0.58</td><td class="n">4.03%</td>
+              <td class="n">3,237</td><td class="n">1,883</td><td class="n">41.8%</td>
+              <td class="why">치명: 소송·명도 분쟁 계류 중인 물건</td></tr>
+            <tr class="denied"><td><span class="vd deny">✕ 부결</span></td>
+              <td><span class="site">목동 7단지 상가<small>하한 시나리오 −12.6%</small></span></td>
+              <td class="n">49.9</td><td class="n">0.74</td><td class="n">17.93%</td>
+              <td class="n">1,786</td><td class="n">1,724</td><td class="n neg">3.5%</td>
+              <td class="why">margin 3.5% &lt; 15%</td></tr>
+            <tr class="denied"><td><span class="vd deny">✕ 부결</span></td>
+              <td><span class="site">신림 별빛거리<small>BEP 미달</small></span></td>
+              <td class="n">40.0</td><td class="n">0.52</td><td class="n">6.52%</td>
+              <td class="n">1,802</td><td class="n">1,842</td><td class="n neg">−2.2%</td>
+              <td class="why">margin −2.2% &lt; 15%</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <p class="tbl-note rv">
+        통과 0곳. 목동은 Huff 점유율 17.9%로 여섯 곳 중 가장 높지만 배후 규모가 작아
+        BEP 를 겨우 넘고, 하한 시나리오에서 적자로 꺾입니다. <b>점유율이 높다고 되는 자리가
+        아닙니다.</b>
+      </p>
+    </div>
+  </section>
+
+  <!-- ══════════ 05 한계 ══════════ -->
+  <section class="sec" id="limits">
+    <div class="tag"><span class="no">05</span><span class="nm">한계</span><span class="bar"></span></div>
+    <div>
+      <h2 class="rv">심의 자리에서 <span class="hl">반드시 고지할 것</span></h2>
+      <p class="sub rv d1">
+        이 시스템이 무엇을 모르는지가 무엇을 아는지만큼 중요합니다.
+        모든 리포트 말미에 미검증 계수 목록이 인쇄됩니다.
+      </p>
+
+      <div class="formula rv d2">
+        <div class="step"><span class="s">!</span><div>
+          <h4>Mode B 는 순환논리에 가깝습니다</h4>
+          <p class="note">가중치를 임의로 정하고, 그 가중치로 만든 점수로 매출을 추정하고,
+            그 추정치로 통과를 판단합니다. 검증되는 것은 사후 실적뿐입니다.
+            <b>대응</b> — Mode B 구간에서는 결과를 심의 참고자료로만 쓰고,
+            최종 판단은 부결 트리거에 둡니다.</p>
+        </div></div>
+        <div class="step"><span class="s">!</span><div>
+          <h4>유동인구 해상도</h4>
+          <p class="note">기지국 기반 추정치는 시간대 정밀도가 낮고 도로 좌·우 구분이
+            안 되는 경우가 많습니다. D_am 과 방향성 보정은 정확도의 핵심 변수입니다.
+            <b>대응</b> — 후보지별 <b>07~09시 현장 통행량 실측 카운트</b>를 필수 절차로
+            편성합니다. 이 절차 없이는 M2 이후 전 단계의 신뢰도가 확보되지 않습니다.</p>
+        </div></div>
+        <div class="step"><span class="s">!</span><div>
+          <h4>계수 전반이 미검증입니다</h4>
+          <div class="eq">λ = <b>2.2</b> &nbsp;·&nbsp; 횡단저항 <b>0.3</b> &nbsp;·&nbsp; κ = <b>0.5</b> &nbsp;·&nbsp; 브랜드 티어 가중 &nbsp;·&nbsp; 축별 배점</div>
+          <p class="note">전부 실무 판단 초기값이며 실증 근거가 없습니다. 계수 레지스트리가
+            검증 상태(MEASURED / ESTIMATED)를 함께 들고 있고, M6 루프가 순차 교정합니다.</p>
+        </div></div>
+        <div class="step"><span class="s">!</span><div>
+          <h4>S &lt; 70 임계가 축퇴합니다</h4>
+          <p class="note">S 는 풀 내 min-max 정규화라 <b>모든 지표에서 동시에 1등이어야</b>
+            100 에 닿습니다. 예시 데이터의 풀 최댓값은 <b>63.0</b> 이고, 그 결과
+            'S &lt; 70' 이 여섯 후보지 전부에 무조건 걸려 변별력이 없습니다.
+            코드가 이 상황을 감지해 심의표에 경고를 찍습니다 —
+            <b>임계값을 포트폴리오 기준으로 재설정할지, 정규화 방식을 바꿀지는 결정이
+            필요한 사항입니다.</b></p>
+        </div></div>
+      </div>
+
+      <div class="guard rv d1">
+        <div class="seal">M6<br/>REQUIRED</div>
+        <div>
+          <h4>사후 보정 루프 없이는 운영하지 마십시오</h4>
+          <p>개점 후 6·12개월 실매출을 수집해 예측 오차를 기록하고, λ·κ·횡단저항을 교정하고,
+            유효 표본 15개에 도달하면 Mode B 에서 Mode A 로 전환합니다.
+            이 루프가 없으면 Mode B 는 순환논리를 벗어나지 못하고 모든 계수가 미검증으로
+            남습니다. 계수 변경은 자동 적용되지 않으며, 변경 이력과 적용 시점을 남겨야
+            과거 심의와 비교가 끊기지 않습니다.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ══════════ CTA ══════════ -->
+<section class="cta">
+  <div class="wrap">
+    <div class="sec" style="padding:0">
+      <div class="tag"><span class="no">06</span><span class="nm">다음</span><span class="bar"></span></div>
+      <div>
+        <h2 class="rv">추정은 틀립니다.<br/><span class="hl">그래서 방어선을 따로 둡니다</span></h2>
+        <p class="sub rv d1">
+          알고리즘은 후보지를 줄이는 도구입니다. 등기부를 떼고, 임대인을 확인하고,
+          오전 7시에 나가 통행량을 세는 일은 사람이 합니다.
+          그 실사가 끝나기 전의 '통과'는 잠정입니다.
+        </p>
+        <div class="acts rv d2">
+          <a class="btn solid" href="../app/index.html">콘솔 열기 <span class="ar">→</span></a>
+          <a class="btn line" href="../QUICKSTART.md">실행 순서 <span class="ar">→</span></a>
+          <a class="btn line" href="../README.md">알고리즘 문서 <span class="ar">→</span></a>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="wrap">
+    <p class="disc">
+      <b>사내 한정 · 대외 배포 금지.</b> 본 시스템의 산출물은 내부 의사결정 자료입니다.
+      가맹희망자에게 제공하는 <b>예상매출액 산정서와 수치를 혼용하지 마십시오.</b>
+      제공치가 내부 중앙값 추정치를 초과하지 않도록 별도 통제해야 합니다.
+      매출·손익은 규칙 기반 모델에 의한 추정치이며 실제 매출을 보장하지 않습니다.
+    </p>
+    <div class="fbar">
+      <a href="../app/index.html">심의 콘솔</a>
+      <a href="../README.md">README</a>
+      <a href="../QUICKSTART.md">QUICKSTART</a>
+      <a href="https://github.com/JasonSJo/jasons-company" rel="noopener">저장소 ↗</a>
+      <span class="sp">JASONS COMPANY</span>
+    </div>
+  </div>
+</footer>
+
+<script>
+/* 스크롤 등장 — 한 번만 켜고 관찰 해제.
+   isIntersecting 만 보면 앵커 점프·스크롤 위치 복원으로 이미 위로 지나간 요소가
+   영영 숨은 채 남는다. 뷰포트 위로 지나간 것(top < 0)도 함께 켠다. */
+const io = new IntersectionObserver((es) => {
+  es.forEach(e => {
+    if (e.isIntersecting || e.boundingClientRect.top < 0) {
+      e.target.classList.add('in');
+      io.unobserve(e.target);
+    }
+  });
+}, { rootMargin: '0px 0px -12% 0px', threshold: .08 });
+document.querySelectorAll('.rv').forEach(el => io.observe(el));
+
+/* 채점표 막대는 표가 보일 때 한 번에 자란다 */
+const rubric = document.querySelector('.rubric');
+if (rubric) {
+  new IntersectionObserver((es, o) => {
+    if (es[0].isIntersecting) { rubric.classList.add('on'); o.disconnect(); }
+  }, { threshold: .25 }).observe(rubric);
+}
+
+/* 표의 수치는 스크롤 진입 시 세어 올린다 (감속 곡선) */
+const reduce = matchMedia('(prefers-reduced-motion: reduce)').matches;
+const fmt = (v, dec) => dec
+  ? v.toFixed(dec)
+  : Math.round(v).toLocaleString('ko-KR');
+
+function countUp(el) {
+  const target = parseFloat(el.dataset.cnt);
+  const dec = parseInt(el.dataset.dec || '0', 10);
+  const dur = 1100, t0 = performance.now();
+  const tick = (now) => {
+    const p = Math.min(1, (now - t0) / dur);
+    const e = 1 - Math.pow(1 - p, 3);          // easeOutCubic
+    el.textContent = fmt(target * e, dec);
+    if (p < 1) requestAnimationFrame(tick);
+    else el.textContent = fmt(target, dec);
+  };
+  requestAnimationFrame(tick);
+}
+
+if (!reduce) {
+  const nums = document.querySelectorAll('[data-cnt]');
+  const nio = new IntersectionObserver((es) => {
+    es.forEach(e => { if (e.isIntersecting) { countUp(e.target); nio.unobserve(e.target); } });
+  }, { threshold: .6 });
+  nums.forEach(n => nio.observe(n));
+}
+</script>
+</body>
+</html>

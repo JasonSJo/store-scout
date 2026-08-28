@@ -556,7 +556,9 @@ def view_audit(user=Depends(current_user), con=Depends(_con)):
 @app.get("/healthz", response_class=PlainTextResponse)
 def healthz():
     ok, why = jobs.available()
-    # 파이프라인 리비전을 함께 낸다. 판정이 알고리즘 판에 따라 달라지므로,
-    # 어떤 판이 그 판정을 냈는지 나중에 확인할 수 있어야 한다(이미지 빌드 시 주입).
-    rev = os.environ.get("STORE_SCOUT_PIPELINE_REV", "unknown")
+    # 알고리즘 판을 함께 낸다. 판정이 그 판에 따라 달라지므로, 어떤 판이 그 판정을
+    # 냈는지 나중에 확인할 수 있어야 한다. 알고리즘이 이 저장소에 있으므로 이제
+    # 이 저장소의 커밋이 곧 그 판이다(이미지 빌드 시 STORE_SCOUT_REV 로 주입).
+    rev = (os.environ.get("STORE_SCOUT_REV")
+           or os.environ.get("STORE_SCOUT_PIPELINE_REV") or "unknown")
     return f"ok pipeline={'yes' if ok else 'no'} rev={rev} {why}".strip()

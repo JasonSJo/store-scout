@@ -890,16 +890,35 @@ class TestDeployment(unittest.TestCase):
         self.assertEqual(r["numInstances"], 1)
         self.assertTrue(env["STORE_SCOUT_DB"].startswith(r["disk"]["mountPath"] + "/"))
 
-    def test_이미지가_알고리즘을_커밋으로_고정한다(self):
-        """브랜치를 따라가면 어제 통과한 후보지가 오늘 부결이 되고 이유를 알 수 없다."""
-        import re as _re
+    def test_이미지가_이_저장소의_알고리즘을_담는다(self):
+        """판정은 알고리즘 판에 따라 달라진다. 어제 통과한 후보지가 오늘 부결이 되면
+        왜 바뀌었는지 짚을 수 있어야 한다.
+
+        전에는 알고리즘이 다른 저장소에 있어 PIPELINE_REV 로 커밋을 박았다. 이관한
+        뒤로는 이 저장소의 커밋이 곧 알고리즘 판이므로, 지켜야 할 것이 바뀌었다 —
+        **빌드가 밖에서 알고리즘을 받아 오지 않을 것.** 받아 오면 이미지와 커밋이
+        갈라져 그 보장이 사라진다."""
         df = (ROOT / "Dockerfile").read_text(encoding="utf-8")
-        # ARG 로 선언한 기본값만 본다 (ENV 는 그 ARG 를 참조한다)
-        revs = _re.findall(r"^ARG PIPELINE_REV=(\S+)", df, _re.M)
-        self.assertTrue(revs, "PIPELINE_REV 가 없습니다")
-        for rev in revs:
-            self.assertRegex(rev, r"^[0-9a-f]{40}$", f"커밋 SHA 가 아닙니다: {rev}")
-        self.assertEqual(len(set(revs)), 1, "두 단계의 리비전이 다릅니다")
+        for 금지 in ("git fetch", "git clone", "PIPELINE_REPO"):
+            self.assertNotIn(금지, df, f"빌드가 밖에서 알고리즘을 받아 옵니다: {금지}")
+        self.assertIn("COPY cafe-trade-area/analysis", df,
+                      "이미지가 이 저장소의 알고리즘을 담지 않습니다")
+        # 심의 콘솔은 사내 한정이고 서버가 쓰지도 않는다 — 이미지에 들어가면 안 된다
+        self.assertNotIn("COPY cafe-trade-area/app", df)
+        self.assertNotIn("COPY cafe-trade-area ", df)
+
+    def test_healthz_가_알고리즘_판을_밝힌다(self):
+        """어떤 판이 그 판정을 냈는지 나중에 확인할 수 있어야 한다."""
+        df = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+        self.assertIn("ARG STORE_SCOUT_REV", df)
+        self.assertIn("STORE_SCOUT_REV=${STORE_SCOUT_REV}", df)
+        self.assertIn("STORE_SCOUT_REV", (ROOT / "server" / "app.py").read_text(encoding="utf-8"))
+
+    def test_알고리즘이_이_저장소_안에_있다(self):
+        """이관이 끝났는지 파일로 확인한다. 없으면 심의가 아예 돌지 않는다."""
+        분석 = ROOT / "cafe-trade-area" / "analysis"
+        self.assertTrue((분석 / "review_sites.py").exists(), 분석)
+        self.assertTrue((분석 / "requirements.txt").exists())
 
     def test_배포_이미지가_데모_시드를_담지_않는다(self):
         """seed_demo.py 는 꾸며 낸 매출을 넣는다. 운영 이미지에 있으면 안 된다."""
