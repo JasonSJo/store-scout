@@ -982,6 +982,35 @@ class TestDeployment(unittest.TestCase):
         self.assertIn("pipeline=yes", wf)
         self.assertIn("rev=$GITHUB_SHA", wf)
 
+    def test_터널_서비스가_기본_실행을_막지_않는다(self):
+        """컴포즈는 **프로필과 무관하게** 모든 변수를 먼저 푼다. 터널 토큰을 :? 로
+        필수로 잡으면 터널을 쓰지 않는 사람의 docker compose up 까지 막힌다 —
+        실제로 그렇게 썼다가 기본 실행이 죽었다."""
+        import re as _re
+        y = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+        필수 = _re.findall(r"\$\{([A-Z_]+):\?", y)
+        self.assertEqual(필수, [],
+                         f"프로필용 변수를 필수로 잡으면 기본 실행이 막힙니다: {필수}")
+        import yaml as _yaml
+        d = _yaml.safe_load(y)
+        self.assertIn("tunnel", d["services"]["tunnel"].get("profiles", []),
+                      "터널이 프로필 밖에 있으면 늘 함께 뜹니다")
+
+    def test_터널_안내가_Secure_쿠키를_함께_말한다(self):
+        """Cloudflare 가 TLS 를 끝내면 앱은 평문 HTTP 로 받는다. STORE_SCOUT_HTTPS
+        를 켜지 않으면 로그인 쿠키에 Secure 가 붙지 않는다 — 화면은 멀쩡히 돌고
+        쿠키만 조용히 약해진다. 절차 어디에도 이 말이 없으면 반드시 빠뜨린다."""
+        for f in ("DEPLOY.md", ".env.example", "docker-compose.yml"):
+            글 = (ROOT / f).read_text(encoding="utf-8")
+            self.assertIn("STORE_SCOUT_HTTPS", 글, f)
+            self.assertIn("Secure", 글, f"{f} 에 Secure 쿠키 이야기가 없습니다")
+
+    def test_env_예시가_커밋되고_실제_env_는_안_된다(self):
+        """.env 에는 터널 토큰이 들어간다. 커밋되면 그 터널을 아무나 띄울 수 있다."""
+        self.assertTrue((ROOT / ".env.example").exists())
+        ignore = (ROOT / ".gitignore").read_text(encoding="utf-8").split()
+        self.assertIn(".env", ignore)
+
     def test_배포_이미지가_데모_시드를_담지_않는다(self):
         """seed_demo.py 는 꾸며 낸 매출을 넣는다. 운영 이미지에 있으면 안 된다."""
         ignore = (ROOT / ".dockerignore").read_text(encoding="utf-8").split()

@@ -6,7 +6,22 @@
 
 ---
 
-## 시작 전에 — 결제 수단이 있어야 한다
+## 어디에 올릴 것인가
+
+| | 월 비용 | 개인정보 위치 | 밖에서 접속 |
+|---|---|---|---|
+| **사내 서버 + Cloudflare Tunnel** | 0원 (전기·서버 제외) | 사내 | ✅ |
+| 사내 서버만 | 0원 | 사내 | ✕ (사내망만) |
+| Fly.io | 상시 기계 1대 + 볼륨 (아래 참고) | 해외 리전 | ✅ |
+| Render | starter 이상 (디스크 필수) | 해외 리전 | ✅ |
+
+이용자가 3~10명인 사내 판단 도구다. **사내 서버 + Cloudflare Tunnel** 이 가장
+잘 맞는다 — 월 비용이 없고, 고객 개인정보가 국외로 나가지 않고, 영업팀이 현장에서도
+쓸 수 있다. 절차는 아래 「사내 서버 + Cloudflare Tunnel」 에 있다.
+
+---
+
+## Fly.io 를 쓸 때 — 결제 수단이 있어야 한다
 
 Fly 는 **결제 수단을 등록해야 앱을 배포할 수 있다.** 없으면 대시보드에 이렇게 뜨고,
 토큰이 있어도 배포가 되지 않는다:
@@ -169,16 +184,71 @@ python3 -m server.bootstrap --org "조직명" --email you@brand.co.kr
 > free 플랜은 쓸 수 없습니다. 디스크를 못 붙이고 비활성 시 잠들어서, 도는 중인 심의가
 > 사라지고 SQLite 도 남지 않습니다. starter 이상이어야 합니다.
 
-## 직접 서버 (사내 서버·VPS)
+## 사내 서버 + Cloudflare Tunnel  ← 권장
+
+포트를 하나도 열지 않고 HTTPS 주소를 만든다. 터널이 **나가는 연결만** 쓰기 때문에
+공유기·방화벽을 건드리지 않는다. 무료이고, 고객 개인정보는 이 서버에만 남는다 —
+Cloudflare 는 TLS 를 끝내고 지나보낼 뿐 저장하지 않는다.
+
+### 1. 터널 만들기
+
+Cloudflare 대시보드 → **Zero Trust → Networks → Tunnels → Create a tunnel**
+→ Cloudflared 선택 → 이름을 짓고 **토큰을 복사**한다.
+(도메인이 Cloudflare 에 등록돼 있어야 한다. 없으면 도메인을 하나 옮겨 두십시오.)
+
+이어서 **Public Hostname** 을 하나 추가한다:
+
+    Subdomain   scout            (원하는 이름)
+    Domain      brand.co.kr      (가진 도메인)
+    Service     HTTP  →  app:8000
+
+`app:8000` 은 이 컴포즈 네트워크 안의 이름이다. `localhost` 가 아니다 —
+터널도 컨테이너라 자기 자신을 가리키게 된다.
+
+### 2. 서버에서
 
 ```bash
-docker compose up -d --build
+git clone https://github.com/JasonSJo/store-scout && cd store-scout
+cp .env.example .env
+# .env 를 열어 채운다:
+#   STORE_SCOUT_HTTPS=1           ← 반드시. 안 켜면 로그인 쿠키에 Secure 가 안 붙는다
+#   CLOUDFLARE_TUNNEL_TOKEN=...   ← 1번에서 복사한 값
+#   STORE_SCOUT_REV=$(git rev-parse HEAD)
+
+docker compose --profile tunnel up -d --build
 docker compose exec app python3 -m server.bootstrap --org "조직명" --email you@brand.co.kr
 ```
 
-기본값이 `127.0.0.1:8000` 에만 연다. 앞에 HTTPS 를 끝내는 리버스 프록시(Caddy·nginx·
-Cloudflare Tunnel)를 두고, 그 뒤에 `STORE_SCOUT_HTTPS=1` 을 켜십시오. `backup` 서비스가
-올릴 때 한 벌 뜨고 24시간마다 한 벌 떠서 최근 14개를 남깁니다.
+`https://scout.brand.co.kr` 로 들어가면 로그인 화면이 뜬다.
+
+### 3. 한 겹 더 — Cloudflare Access (권장)
+
+터널을 켜는 순간 이 화면은 **인터넷에서 닿는다.** 앱 자체 로그인이 있지만, 고객
+성명·연락처를 담은 사내 도구다. 로그인 화면 자체를 아무나 못 보게 막는 편이 낫다.
+
+Zero Trust → **Access → Applications → Add an application** → Self-hosted
+→ 위 호스트명을 넣고, 정책을 **Emails ending in `@brand.co.kr`** 로 둔다.
+50명까지 무료다. 이러면 회사 메일이 없는 사람은 로그인 화면조차 보지 못한다.
+
+### 알아 둘 것
+
+- **서버가 꺼지면 접속도 끊긴다.** 늘 켜 두는 기계여야 한다. 노트북은 맞지 않는다.
+- 백업은 `backup` 서비스가 올릴 때 한 벌, 그 뒤 24시간마다 한 벌 떠서 최근 14개를
+  `./backup` 에 남긴다. **그 안에 기존점 실매출과 상담 개인정보가 들어 있다** —
+  서버와 같은 수준으로 통제하거나 암호화해 다른 곳으로 옮기십시오.
+- 터널을 끄려면 `docker compose --profile tunnel stop tunnel`. 앱은 계속 돌고
+  사내망에서만 닿는다.
+
+## 사내망에서만 (터널 없이)
+
+```bash
+STORE_SCOUT_REV=$(git rev-parse HEAD) docker compose up -d --build
+docker compose exec app python3 -m server.bootstrap --org "조직명" --email you@brand.co.kr
+```
+
+`127.0.0.1:8000` 에만 연다. 다른 기계에서 보려면 `ports` 를 `"0.0.0.0:8000:8000"` 으로
+바꾸기 전에 — 그건 **평문 HTTP** 다. 사내망이라도 로그인 쿠키와 고객 연락처가 그대로
+흐른다. Caddy·nginx 로 HTTPS 를 끝내고 `STORE_SCOUT_HTTPS=1` 을 켜십시오.
 
 ---
 
