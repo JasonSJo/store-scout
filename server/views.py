@@ -376,18 +376,22 @@ def site_page(user, run, batch, site, idx) -> str:
     사유 = "".join(f"<li>{E(x)}</li>" for x in j.get("사유", [])) or "<li>—</li>"
     비고 = "".join(f"<li>{E(x)}</li>" for x in j.get("비고", []))
     경고 = "".join(f"<li>{E(x)}</li>" for x in site.get("경고", []))
-    시세 = j.get("시세대조")
+    # 파이프라인이 판정 밖(레코드 옆)에 싣는다 — 판정에 들어가지 않는 참고 자료다
+    시세 = site.get("시세대조")
     시세블록 = ""
     if 시세:
-        시세블록 = f"""<div class="card"><div class="hd"><h2>지역 시세 대조</h2></div><div class="bd">
+        시세블록 = f"""<div class="card"><div class="hd"><h2>지역 시세 대조</h2>
+        <span class="tag t-plain">참고 · 판정 미반영</span></div><div class="bd">
         <div class="tiles">
           {tile("실거래", str(시세['건수']), "건")}
           {tile("중앙 단가", _nf(시세['만원_per_m2_중앙'], 1), "만원/㎡")}
           {tile("기대 월임대료", _nf(시세['기대_월임대료_만원']), "만원")}
           {tile("제시 대비", _nf(시세['배수'], 2), "배", accent=True)}
         </div>
-        <p class="hint" style="margin-top:12px">매매가를 임대료로 환산한 참고선입니다.
-        환산에 쓰는 연임대수익률은 미검증 계수입니다.</p></div></div>"""
+        <p class="hint" style="margin-top:12px">매매가를 임대료로 환산한 참고선이며
+        <b>판정에는 들어가지 않습니다.</b> 매매가는 임대 조건이 아니고, 상업용은 층·용도·
+        전면에 따라 편차가 크며, 환산에 쓰는 연임대수익률이 미검증 계수입니다.
+        제시 임대료가 지역 수준을 크게 벗어나면 실사에서 확인하십시오.</p></div></div>"""
     return layout(site.get("이름", "후보지"), f"""
 <div class="page-h"><div><h1>{E(site.get('이름',''))}</h1>
   <p class="sub">{E(batch.get('name',''))} · {E((site.get('입력') or {}).get('주소',''))}</p></div>
