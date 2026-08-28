@@ -52,14 +52,73 @@
 
 ## Fly.io
 
+`fly launch` 는 쓰지 않는다 — 저장소를 훑어 `fly.toml` 을 자기 판단으로 다시 쓰기
+때문에, 여기서 정해 둔 볼륨·기계 수·헬스체크가 조용히 바뀐다. 앱을 직접 만들고
+이 파일을 그대로 쓴다.
+
+### 한 번만 하는 준비
+
 ```bash
-fly launch --no-deploy --copy-config       # 앱 이름·지역만 잡는다
-fly volumes create scout_data --size 1 --region nrt
-fly deploy
+# 0. 배포 전 점검 — Fly 에 붙지 않고 확인할 수 있는 것부터
+python3 scripts/preflight.py
+
+# 1. flyctl 설치 후 로그인
+curl -L https://fly.io/install.sh | sh
+fly auth login
+
+# 2. 앱을 만든다. 이름은 Fly 전체에서 유일해야 한다 —
+#    store-scout 이 이미 있으면 fly.toml 의 app 을 바꾸고 그 이름으로 만든다.
+fly apps create store-scout
+
+# 3. 볼륨. 이름과 지역이 fly.toml 의 [mounts].source · primary_region 과 같아야 한다.
+#    여기에 조직 데이터가 들어간다. 이 볼륨을 지우면 복구할 방법이 없다.
+fly volumes create scout_data --size 1 --region nrt --app store-scout
+
+# 4. 첫 배포. --remote-only 면 Fly 빌더에서 빌드해 로컬 Docker 가 없어도 된다.
+fly deploy --remote-only
+
+# 5. 어느 알고리즘 판이 올라갔는지 확인
+curl https://store-scout.fly.dev/healthz     # ok pipeline=yes rev=<SHA>
+
+# 6. 첫 조직과 관리자. 화면에 가입 경로가 없으므로 이걸 해야 들어갈 수 있다.
 fly ssh console -C "python3 -m server.bootstrap --org '조직명' --email you@brand.co.kr"
 ```
 
-마지막 줄이 임시 비밀번호를 **한 번만** 출력한다. 옮겨 적고, 로그에 남았다면 지우십시오.
+6번이 임시 비밀번호를 **한 번만** 출력한다. 옮겨 적고, 터미널 기록에 남았다면 지우십시오.
+로그인한 뒤 설정에서 브랜드, 기존점에서 실매출을 넣어야 심의를 돌릴 수 있습니다.
+
+### 그다음부터의 배포
+
+`fly deploy` 를 직접 돌려도 되고, 저장소의 **Actions → Fly 배포 → Run workflow**
+로 눌러도 된다. 워크플로가 테스트와 점검을 먼저 돌리고, 배포 뒤 `/healthz` 로
+알고리즘 판까지 확인한다. 쓰려면 한 번만:
+
+1. <https://fly.io/user/personal_access_tokens> 에서 토큰 발급
+2. 저장소 **Settings → Secrets and variables → Actions** 에 `FLY_API_TOKEN` 으로 저장
+
+push 마다 자동으로 배포하지 않는다. 배포는 프로세스를 갈아 끼우고 그때 돌던 심의는
+함께 죽는다(재시작 때 '실패' 로 정리되지만 사용자는 다시 올려야 한다). 언제 끊을지는
+사람이 정해야 합니다.
+
+### 도메인
+
+우선 `store-scout.fly.dev` 로 뜬다. 도메인을 사면:
+
+```bash
+fly certs add scout.example.com
+fly certs show scout.example.com     # 여기 나오는 A/AAAA 레코드를 DNS 에 넣는다
+```
+
+### 첫 배포에서 막히는 자리
+
+| 증상 | 원인 | 할 일 |
+|---|---|---|
+| `Name has already been taken` | 앱 이름이 Fly 전체에서 유일해야 한다 | `fly.toml` 의 `app` 을 바꾸고 다시 `fly apps create` |
+| `volume ... not found` | 볼륨 이름·지역이 `fly.toml` 과 다르다 | `[mounts].source` 와 `primary_region` 에 맞춰 다시 만든다 |
+| `/healthz` 가 `pipeline=no` | 이미지에 알고리즘이 안 들어갔다 | 빌드 로그의 `git fetch` 단계 확인. 이대로 두면 모든 심의가 실패한다 |
+| 헬스체크 실패로 재시작 반복 | 볼륨이 안 붙어 DB 를 못 만든다 | `fly volumes list` 로 붙었는지 확인 |
+| `auto_stop_machines` 파싱 오류 | 구버전 flyctl 은 문자열 대신 불리언을 받는다 | `"off"` → `false` |
+| 큰 묶음에서 실행이 죽는다 | 메모리 부족 | `[[vm]].memory` 를 올린다 |
 
 ## Render
 
@@ -121,6 +180,7 @@ docker compose up -d
 ## 배포 전 확인
 
 ```bash
+python3 scripts/preflight.py              # Fly 없이 확인되는 것부터
 pip install -r requirements-dev.txt
 python3 -m unittest discover -s tests     # 65개 — 조직 격리·권한·개인정보·배포 설정
 docker build -t store-scout .

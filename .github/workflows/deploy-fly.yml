@@ -1,0 +1,92 @@
+name: Fly 배포
+
+# 손으로 눌러서만 배포한다. push 마다 자동으로 올리지 않는 이유가 있다:
+# 배포는 프로세스를 갈아 끼우고, 그때 돌던 심의는 함께 죽는다(재시작 때 '실패'로
+# 정리되지만 사용자는 다시 올려야 한다). 언제 끊을지는 사람이 정해야 한다.
+#
+# 처음 한 번만 준비하면 된다:
+#   1. https://fly.io/user/personal_access_tokens 에서 토큰 발급
+#   2. 저장소 Settings → Secrets and variables → Actions → New repository secret
+#      이름 FLY_API_TOKEN
+#   3. 로컬에서 앱과 볼륨을 한 번 만든다 (DEPLOY.md 참고):
+#        fly apps create store-scout
+#        fly volumes create scout_data --size 1 --region nrt --app store-scout
+#   4. Actions 탭에서 이 워크플로를 Run workflow
+
+on:
+  workflow_dispatch:
+    inputs:
+      pipeline_rev:
+        description: "알고리즘 커밋 SHA (비우면 Dockerfile 의 기본값)"
+        required: false
+        type: string
+      dry_run:
+        description: "검사만 하고 배포하지 않는다"
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  # 배포가 겹치면 기계 하나를 두 배포가 동시에 갈아 끼운다
+  group: fly-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      # 배포 전에 테스트를 돌린다. 조직 격리·권한·개인정보 방지선이 깨진 채로
+      # 올라가면 화면은 멀쩡해 보이고 사고만 난다.
+      - name: 테스트
+        run: |
+          pip install -r requirements-dev.txt
+          python3 -m unittest discover -s tests -v
+
+      - name: 배포 전 점검
+        run: python3 scripts/preflight.py
+
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      - name: 배포
+        if: ${{ !inputs.dry_run }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          test -n "$FLY_API_TOKEN" || {
+            echo "::error::FLY_API_TOKEN 시크릿이 없습니다. 이 파일 맨 위의 준비 절차를 보십시오."
+            exit 1
+          }
+          ARGS="--remote-only"
+          if [ -n "${{ inputs.pipeline_rev }}" ]; then
+            ARGS="$ARGS --build-arg PIPELINE_REV=${{ inputs.pipeline_rev }}"
+          fi
+          flyctl deploy $ARGS
+
+      - name: 배포 확인
+        if: ${{ !inputs.dry_run }}
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+        run: |
+          APP=$(python3 -c "import tomllib;print(tomllib.load(open('fly.toml','rb'))['app'])")
+          # 어느 알고리즘 판이 올라갔는지 배포 기록에 남긴다
+          for i in 1 2 3 4 5 6; do
+            OUT=$(curl -fsS "https://$APP.fly.dev/healthz" 2>/dev/null) && break
+            echo "  대기 중... ($i/6)"; sleep 10
+          done
+          echo "$OUT"
+          case "$OUT" in
+            *"pipeline=yes"*) ;;
+            *) echo "::error::알고리즘이 이미지에 없습니다. 이대로면 모든 심의가 실패합니다."; exit 1 ;;
+          esac
+          echo "### 배포 완료" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+          echo "https://$APP.fly.dev" >> $GITHUB_STEP_SUMMARY
+          echo "$OUT" >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY

@@ -160,7 +160,19 @@ python3 -m server.bootstrap --org "조직명" --plan team --email you@brand.co.k
 백그라운드 작업이라, 둘로 늘리면 데이터가 조용히 갈라진다. 설정 세 벌이 모두 1개를
 강제하고 테스트가 그 값을 지킨다.
 
-자세한 절차와 백업·복구는 [DEPLOY.md](DEPLOY.md).
+```bash
+python3 scripts/preflight.py    # Fly 에 붙지 않고 확인되는 것부터
+fly apps create store-scout
+fly volumes create scout_data --size 1 --region nrt --app store-scout
+fly deploy --remote-only
+fly ssh console -C "python3 -m server.bootstrap --org '조직명' --email you@brand.co.kr"
+```
+
+그다음부터는 저장소의 **Actions → Fly 배포** 로 눌러서 올린다(테스트·점검을 먼저
+돌리고 배포 뒤 `/healthz` 까지 확인한다). push 마다 자동으로 올리지 않는 것은,
+배포가 그때 돌던 심의를 죽이기 때문이다.
+
+자세한 절차와 백업·복구, 첫 배포에서 막히는 자리는 [DEPLOY.md](DEPLOY.md).
 
 ## 테스트
 
