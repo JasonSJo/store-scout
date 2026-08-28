@@ -53,14 +53,22 @@ def main() -> int:
     확인((fly.get("env") or {}).get("STORE_SCOUT_HTTPS"),
        "STORE_SCOUT_HTTPS 가 비어 있습니다 — 세션 쿠키에 Secure 가 붙지 않습니다")
 
-    # 4. 알고리즘이 커밋으로 고정돼 있는가
-    revs = re.findall(r"^ARG PIPELINE_REV=(\S+)", df, re.M)
-    if 확인(revs, "Dockerfile 에 ARG PIPELINE_REV 가 없습니다"):
-        확인(len(set(revs)) == 1, f"단계별 PIPELINE_REV 가 다릅니다: {sorted(set(revs))}")
-        for rev in set(revs):
-            확인(re.fullmatch(r"[0-9a-f]{40}", rev),
-               f"PIPELINE_REV 가 커밋 SHA 가 아닙니다: {rev!r} — "
-               "브랜치를 따라가면 판정이 말 없이 바뀝니다")
+    # 4. 알고리즘 판이 이 저장소의 커밋인가
+    #    전에는 알고리즘이 다른 저장소에 있어 PIPELINE_REV 로 커밋을 박았다.
+    #    이관한 뒤로는 배포하는 커밋이 곧 알고리즘 판이므로, 지킬 것이 바뀌었다:
+    #    빌드가 밖에서 알고리즘을 받아 오지 않을 것 + 그 판을 /healthz 가 밝힐 것.
+    for 금지 in ("git fetch", "git clone", "PIPELINE_REPO"):
+        확인(금지 not in df,
+           f"Dockerfile 이 밖에서 알고리즘을 받아 옵니다({금지}) — "
+           "이미지와 커밋이 갈라져 어느 판이 판정했는지 잃습니다")
+    확인("COPY cafe-trade-area/analysis" in df,
+       "이미지가 이 저장소의 알고리즘을 담지 않습니다")
+    확인(re.search(r"^ARG\s+STORE_SCOUT_REV", df, re.M),
+       "Dockerfile 에 ARG STORE_SCOUT_REV 가 없습니다 — /healthz 가 판을 못 밝힙니다")
+    wf = (ROOT / ".github" / "workflows" / "deploy-fly.yml")
+    if wf.exists():
+        확인("--build-arg STORE_SCOUT_REV" in wf.read_text(encoding="utf-8"),
+           "배포 워크플로가 STORE_SCOUT_REV 를 넘기지 않습니다 — rev=unknown 이 됩니다")
 
     # 5. 헬스체크 경로가 앱에 실제로 있는가
     checks = svc.get("checks") or []

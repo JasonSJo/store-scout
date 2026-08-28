@@ -920,6 +920,26 @@ class TestDeployment(unittest.TestCase):
         self.assertTrue((분석 / "review_sites.py").exists(), 분석)
         self.assertTrue((분석 / "requirements.txt").exists())
 
+    def test_배포_워크플로가_Dockerfile_과_같은_빌드인자를_쓴다(self):
+        """워크플로가 없는 ARG 를 넘기면 **오류 없이 무시된다.** 배포는 성공하고
+        /healthz 만 rev=unknown 을 내며, 어떤 판이 그 판정을 냈는지 잃는다.
+        실제로 알고리즘을 이관하면서 PIPELINE_REV 가 그렇게 죽은 인자가 됐다."""
+        import re as _re
+        wf = (ROOT / ".github" / "workflows" / "deploy-fly.yml").read_text(encoding="utf-8")
+        df = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+        선언 = set(_re.findall(r"^ARG\s+([A-Z_][A-Z0-9_]*)", df, _re.M))
+        넘김 = set(_re.findall(r"--build-arg\s+([A-Z_][A-Z0-9_]*)=", wf))
+        self.assertTrue(넘김, "워크플로가 빌드 인자를 하나도 넘기지 않습니다")
+        self.assertLessEqual(넘김, 선언,
+                             f"Dockerfile 에 없는 인자를 넘깁니다: {sorted(넘김 - 선언)}")
+
+    def test_배포_확인이_올라간_판을_대조한다(self):
+        """pipeline=yes 만 보면 '알고리즘이 있다' 는 것만 확인한다. 옛 이미지가
+        그대로 떠 있어도 통과한다 — 커밋까지 맞는지 봐야 배포가 됐다고 할 수 있다."""
+        wf = (ROOT / ".github" / "workflows" / "deploy-fly.yml").read_text(encoding="utf-8")
+        self.assertIn("pipeline=yes", wf)
+        self.assertIn("rev=$GITHUB_SHA", wf)
+
     def test_배포_이미지가_데모_시드를_담지_않는다(self):
         """seed_demo.py 는 꾸며 낸 매출을 넣는다. 운영 이미지에 있으면 안 된다."""
         ignore = (ROOT / ".dockerignore").read_text(encoding="utf-8").split()

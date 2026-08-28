@@ -11,15 +11,12 @@ name: Fly 배포
 #   3. 로컬에서 앱과 볼륨을 한 번 만든다 (DEPLOY.md 참고):
 #        fly apps create store-scout
 #        fly volumes create scout_data --size 1 --region nrt --app store-scout
+#        fly secrets set STORE_SCOUT_SECRET=$(python3 -c "import secrets;print(secrets.token_urlsafe(48))") --app store-scout
 #   4. Actions 탭에서 이 워크플로를 Run workflow
 
 on:
   workflow_dispatch:
     inputs:
-      pipeline_rev:
-        description: "알고리즘 커밋 SHA (비우면 Dockerfile 의 기본값)"
-        required: false
-        type: string
       dry_run:
         description: "검사만 하고 배포하지 않는다"
         required: false
@@ -63,11 +60,9 @@ jobs:
             echo "::error::FLY_API_TOKEN 시크릿이 없습니다. 이 파일 맨 위의 준비 절차를 보십시오."
             exit 1
           }
-          ARGS="--remote-only"
-          if [ -n "${{ inputs.pipeline_rev }}" ]; then
-            ARGS="$ARGS --build-arg PIPELINE_REV=${{ inputs.pipeline_rev }}"
-          fi
-          flyctl deploy $ARGS
+          # 알고리즘이 이 저장소에 있으므로 배포하는 커밋이 곧 알고리즘 판이다.
+          # /healthz 가 이 값을 내보내야 어떤 판이 그 판정을 냈는지 짚을 수 있다.
+          flyctl deploy --remote-only --build-arg STORE_SCOUT_REV="$GITHUB_SHA"
 
       - name: 배포 확인
         if: ${{ !inputs.dry_run }}
@@ -84,6 +79,10 @@ jobs:
           case "$OUT" in
             *"pipeline=yes"*) ;;
             *) echo "::error::알고리즘이 이미지에 없습니다. 이대로면 모든 심의가 실패합니다."; exit 1 ;;
+          esac
+          case "$OUT" in
+            *"rev=$GITHUB_SHA"*) ;;
+            *) echo "::error::올라간 판이 이 커밋이 아닙니다: $OUT"; exit 1 ;;
           esac
           echo "### 배포 완료" >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
