@@ -5,6 +5,10 @@ name: Fly 배포
 # 정리되지만 사용자는 다시 올려야 한다). 언제 끊을지는 사람이 정해야 한다.
 #
 # 처음 한 번만 준비하면 된다:
+#   0. fly.io → Account → Billing 에 결제 수단을 등록한다.
+#      없으면 토큰이 있어도 배포가 되지 않는다 ("To start deploying apps you'll
+#      need to add a payment method"). 이 구성은 기계 하나를 24시간 띄워 두므로
+#      무료 구간에 기대지 않는다 — DEPLOY.md 의 「시작 전에」 참고.
 #   1. 토큰 발급
 #      개인 토큰:  https://fly.io/user/personal_access_tokens
 #      ⚠ 조직이 SSO 를 강제하면 개인 토큰이 만들어지지 않는다. 그때는 조직 토큰:

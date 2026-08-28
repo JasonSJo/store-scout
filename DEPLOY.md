@@ -6,6 +6,41 @@
 
 ---
 
+## 시작 전에 — 결제 수단이 있어야 한다
+
+Fly 는 **결제 수단을 등록해야 앱을 배포할 수 있다.** 없으면 대시보드에 이렇게 뜨고,
+토큰이 있어도 배포가 되지 않는다:
+
+> Add a payment method to keep using our platform.
+> To start deploying apps you'll need to add a payment method.
+
+    fly.io → Account → Billing 에서 카드를 등록한다.
+
+### 이 구성이 무엇에 과금되는가
+
+무료 구간에 기대는 구성이 **아니다.** 위의 「인스턴스는 하나여야 한다」 때문에
+`fly.toml` 이 이렇게 잡혀 있다:
+
+    min_machines_running = 1     기계를 항상 하나 띄워 둔다
+    auto_stop_machines   = "off" 놀아도 멈추지 않는다
+    size / memory        = shared-cpu-1x / 1gb
+    volume               = 1GB
+
+즉 **기계 하나가 24시간 돈다.** 자동 정지를 끈 것은 아껴서 손해 보는 자리라서다 —
+심의가 도는 중에 기계가 멈추면 그 실행이 통째로 날아간다. 메모리 1GB 도 마찬가지로,
+후보지 수십 곳을 한 번에 돌 때 256MB 에서는 OOM 으로 죽는다.
+
+과금 대상은 **상시 가동 기계 1대 + 볼륨 1GB + 송신 트래픽**이다. 금액은 바뀌므로
+https://fly.io/docs/about/pricing/ 에서 확인하십시오. 쓰지 않는 동안에도 계속
+나가는 비용이라는 점만 미리 알고 시작하는 편이 낫습니다.
+
+멈춰 두려면 앱을 지우지 말고 기계만 내리십시오 — 볼륨(=조직 데이터)은 남습니다:
+
+    fly scale count 0 --app store-scout    # 멈춤. 볼륨은 그대로 과금된다
+    fly scale count 1 --app store-scout    # 다시 켬
+
+---
+
 ## 먼저 정하고 갈 것
 
 ### 1. 인스턴스는 **하나**여야 한다
