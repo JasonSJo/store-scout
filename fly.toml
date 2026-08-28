@@ -2,7 +2,7 @@
 #
 #   fly launch --no-deploy --copy-config   # 앱 이름·지역만 잡는다
 #   fly volumes create scout_data --size 1 --region nrt
-#   fly deploy
+#   fly deploy --build-arg STORE_SCOUT_REV=$(git rev-parse HEAD)
 #   fly ssh console -C "python3 -m server.bootstrap --org '조직명' --email you@brand.co.kr"
 #
 # 지역은 nrt(도쿄)를 기본으로 뒀다. 이용자가 한국에 있고, 파이프라인이 수 분씩
@@ -13,9 +13,9 @@ primary_region = "nrt"
 
 [build]
   dockerfile = "Dockerfile"
-  # 알고리즘 리비전을 올릴 때 여기와 Dockerfile 의 기본값을 함께 바꾼다
-  # [build.args]
-  #   PIPELINE_REV = "커밋SHA"
+  # 알고리즘 판은 배포하는 커밋이다. 워크플로가 --build-arg STORE_SCOUT_REV 로
+  # 넘기므로 여기 적을 것이 없다. 손으로 fly deploy 할 때만 이렇게 넘긴다:
+  #   fly deploy --build-arg STORE_SCOUT_REV=$(git rev-parse HEAD)
 
 [env]
   STORE_SCOUT_HTTPS = "1"

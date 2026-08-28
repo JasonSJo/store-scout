@@ -920,6 +920,39 @@ class TestDeployment(unittest.TestCase):
         self.assertTrue((분석 / "review_sites.py").exists(), 분석)
         self.assertTrue((분석 / "requirements.txt").exists())
 
+    def test_배포_설정이_앱에_없는_환경변수를_적지_않는다(self):
+        """배포 설정에 없는 변수를 적어도 **아무 일도 일어나지 않는다.** 아무도
+        읽지 않으니 오류가 없고, 그걸 준비 절차에 적어 두면 사람이 매번 하나마나
+        한 일을 한다. 실제로 그렇게 STORE_SCOUT_SECRET 을 적어 넣은 적이 있다 —
+        이 앱의 세션은 DB 에 넣는 무작위 토큰이라 서명 시크릿이 아예 없다."""
+        import re as _re, tomllib
+        읽는것 = set()
+        for f in (ROOT / "server").glob("*.py"):
+            읽는것 |= set(_re.findall(r"os\.environ(?:\.get)?[\(\[][\"']([A-Z_]+)",
+                                    f.read_text(encoding="utf-8")))
+        적는것 = set()
+        fly = tomllib.load((ROOT / "fly.toml").open("rb"))
+        적는것 |= set(fly.get("env") or {})
+        적는것 |= set(_re.findall(r"^\s+STORE_SCOUT_[A-Z_]+",
+                                (ROOT / "docker-compose.yml").read_text(encoding="utf-8"),
+                                _re.M))
+        적는것 = {x.strip().rstrip(":") for x in 적는것}
+        for 문서 in (".github/workflows/deploy-fly.yml", "DEPLOY.md"):
+            적는것 |= set(_re.findall(r"(STORE_SCOUT_[A-Z_]+)=",
+                                    (ROOT / 문서).read_text(encoding="utf-8")))
+        모르는것 = {v for v in 적는것 if v.startswith("STORE_SCOUT_")} - 읽는것
+        self.assertEqual(모르는것, set(),
+                         f"앱이 읽지 않는 환경변수를 배포 설정이 적습니다: {sorted(모르는것)}")
+
+    def test_볼륨을_두_번_만들지_않는다(self):
+        """볼륨이 둘이 되면 기계가 어느 쪽을 붙일지 알 수 없다. 붙지 않은 쪽의
+        조직 데이터는 사라진 것처럼 보이고, 화면은 멀쩡하며 DB 만 비어 있다."""
+        wf = (ROOT / ".github" / "workflows" / "deploy-fly.yml").read_text(encoding="utf-8")
+        self.assertIn("flyctl volumes list", wf,
+                      "볼륨을 만들기 전에 있는지 보지 않습니다")
+        i, j = wf.index("flyctl volumes list"), wf.index("flyctl volumes create")
+        self.assertLess(i, j, "확인이 생성보다 뒤에 있습니다")
+
     def test_배포_워크플로가_Dockerfile_과_같은_빌드인자를_쓴다(self):
         """워크플로가 없는 ARG 를 넘기면 **오류 없이 무시된다.** 배포는 성공하고
         /healthz 만 rev=unknown 을 내며, 어떤 판이 그 판정을 냈는지 잃는다.
