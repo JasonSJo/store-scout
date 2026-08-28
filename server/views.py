@@ -25,8 +25,8 @@ def login_page(error: str = "") -> str:
     err = note("err", "✕", E(error)) if error else ""
     return layout("로그인", f"""
 <div style="max-width:400px;margin:56px auto">
-  <div class="page-h"><div><h1>출점심의</h1>
-    <p class="sub">프랜차이즈 운영팀·영업팀을 위한 상권분석</p></div></div>
+  <div class="page-h"><div><h1>스스닷컴</h1>
+    <p class="sub">프랜차이즈 운영팀·영업팀을 위한 점포개발 상권분석</p></div></div>
   {err}
   <div class="card"><div class="bd">
     <form method="post" action="/login">

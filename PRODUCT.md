@@ -1,4 +1,4 @@
-# 출점심의 — 제품 정의
+# 스스닷컴 — 제품 정의
 
 프랜차이즈 **운영팀·영업팀**이 후보지를 걸러내고 출점 여부를 판단하는 구독 서비스.
 [상권분석 알고리즘](https://github.com/JasonSJo/jasons-company/tree/main/cafe-trade-area)

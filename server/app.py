@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-출점심의 SaaS — HTTP 계층
+스스닷컴 SaaS — HTTP 계층
 
 원칙 셋. 이 셋이 어긋나면 제품이 아니라 사고다.
 
@@ -24,7 +24,7 @@ from . import auth, consults, db, jobs, orgdata, plans, views
 COOKIE = "scout_session"
 등급 = "사내 한정 · 대외 배포 금지"
 
-app = FastAPI(title="출점심의", docs_url=None, redoc_url=None)
+app = FastAPI(title="스스닷컴", docs_url=None, redoc_url=None)
 
 
 @app.on_event("startup")

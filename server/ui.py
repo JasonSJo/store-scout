@@ -407,11 +407,11 @@ def layout(title: str, body: str, user: dict | None = None, *,
 <meta name="robots" content="noindex"/><meta name="color-scheme" content="light"/>
 <meta name="theme-color" content="#ffffff"/>
 <link rel="icon" href="data:image/svg+xml,{FAVICON}"/>
-<title>{E(title)} · 출점심의</title>{head}
+<title>{E(title)} · 스스닷컴</title>{head}
 <style>{CSS}</style></head><body>
 <a class="skip" href="#main">본문 바로가기</a>
 <header class="top"><div class="wrap top-in">
-  <a class="brand" href="/"><span class="mk">◎</span>출점심의</a>{top}
+  <a class="brand" href="/"><span class="mk">◎</span>스스닷컴</a>{top}
 </div></header>
 <main id="main"><div class="wrap">{body}</div></main>
 <footer><div class="wrap">사내 한정 자료를 다룹니다 · 열람·내보내기 기록이 남습니다</div></footer>
