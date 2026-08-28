@@ -948,10 +948,19 @@ class TestDeployment(unittest.TestCase):
         """볼륨이 둘이 되면 기계가 어느 쪽을 붙일지 알 수 없다. 붙지 않은 쪽의
         조직 데이터는 사라진 것처럼 보이고, 화면은 멀쩡하며 DB 만 비어 있다."""
         wf = (ROOT / ".github" / "workflows" / "deploy-fly.yml").read_text(encoding="utf-8")
-        self.assertIn("flyctl volumes list", wf,
-                      "볼륨을 만들기 전에 있는지 보지 않습니다")
-        i, j = wf.index("flyctl volumes list"), wf.index("flyctl volumes create")
-        self.assertLess(i, j, "확인이 생성보다 뒤에 있습니다")
+        # 안내문(echo)과 주석에 적힌 명령은 세지 않는다 — 실제로 도는 줄만 본다.
+        # 처음엔 문자열 위치로 봤다가, 오류 안내에 적어 둔 'volumes create' 때문에
+        # 순서가 뒤집힌 것으로 읽혔다.
+        도는줄 = [l.strip() for l in wf.splitlines()
+                if "flyctl volumes" in l
+                and not l.strip().startswith(("#", "echo"))
+                and "echo " not in l]
+        확인 = [i for i, l in enumerate(도는줄) if l.startswith("if flyctl volumes list")
+              or l.startswith("flyctl volumes list")]
+        생성 = [i for i, l in enumerate(도는줄) if "flyctl volumes create" in l]
+        self.assertTrue(확인, f"볼륨을 만들기 전에 있는지 보지 않습니다: {도는줄}")
+        self.assertTrue(생성, f"볼륨을 만드는 줄이 없습니다: {도는줄}")
+        self.assertLess(min(확인), min(생성), f"확인이 생성보다 뒤에 있습니다: {도는줄}")
 
     def test_배포_워크플로가_Dockerfile_과_같은_빌드인자를_쓴다(self):
         """워크플로가 없는 ARG 를 넘기면 **오류 없이 무시된다.** 배포는 성공하고
