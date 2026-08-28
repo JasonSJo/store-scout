@@ -42,9 +42,11 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      # enablement: true 를 쓰지 않는다. Actions 의 기본 토큰에는 Pages 를 새로
+      # 만들 권한이 없어서, 아직 안 켜져 있으면 'Resource not accessible by
+      # integration' 으로 죽는다 — 실제로 세 번 그렇게 실패했다. Pages 는 위 주석대로
+      # Settings 에서 한 번 켜고, 여기서는 켜져 있는 설정을 읽기만 한다.
       - uses: actions/configure-pages@v5
-        with:
-          enablement: true
       - name: Assemble site
         # 사이트 구조 (store-scout.com 기준)
         #   /            스스닷컴 서비스 소개
