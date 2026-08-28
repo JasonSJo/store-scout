@@ -1,0 +1,41 @@
+name: 알고리즘 테스트 (M1~M6)
+
+# M1~M6 모듈 단위 + 예시 데이터 통합 + M5 파이썬↔콘솔 대조.
+# 콘솔이 다시 계산하는 모듈은 M5 하나뿐이라 대조 범위도 M5 로 좁혔지만,
+# 그 하나는 무작위 400건 + 임계 경계로 넓게 훑는다.
+
+on:
+  push:
+    paths: ["cafe-trade-area/**", ".github/workflows/algo-test.yml"]
+  pull_request:
+    paths: ["cafe-trade-area/**", ".github/workflows/algo-test.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+      - name: 의존성 설치
+        run: pip install -r cafe-trade-area/analysis/requirements.txt
+      - name: 모듈·통합·M5 대조 테스트
+        working-directory: cafe-trade-area/analysis
+        run: python -m unittest discover -s tests -t . -v
+      - name: 파이프라인 스모크 (dry-run, 네트워크 없음)
+        working-directory: cafe-trade-area/analysis
+        run: ./run_all.sh
+      - name: 예시 데이터 재생성이 결정적인지
+        working-directory: cafe-trade-area/analysis
+        run: |
+          python3 make_fixtures.py >/dev/null
+          git diff --exit-code -- . || {
+            echo "make_fixtures.py 가 커밋된 예시 데이터와 다른 결과를 냈습니다"; exit 1; }
