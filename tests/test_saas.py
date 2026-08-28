@@ -109,6 +109,14 @@ class TestTenancy(unittest.TestCase):
             with self.assertRaises(ValueError):
                 db.rows_for_org(con, "orgs", 1)         # 허용 테이블 밖
 
+    def test_숫자가_아닌_타일은_모노로_조판하지_않는다(self):
+        """'B(앵커링)' 에 모노를 걸면 괄호만 모노가 되고 자간이 벌어져 흩어져 보인다.
+        수치 타일(6/150건)은 자릿수가 맞아야 하므로 모노를 유지한다."""
+        from server import ui
+        self.assertIn('class="v txt"', ui.tile("매출 추정 모드", "B(앵커링)"))
+        self.assertIn('class="v"', ui.tile("이번 달 분석", "6", "/150건"))
+        self.assertNotIn("txt", ui.tile("이번 달 분석", "6", "/150건"))
+
     def test_대시보드에_남의_묶음이_없다(self):
         with db.tx() as con:
             con.execute("INSERT INTO batches (org_id,name,created_by,sites_csv,site_count)"

@@ -21,14 +21,21 @@ E = lambda s: html.escape(str(s if s is not None else ""))
 
 CSS = """
 :root{
-  --bg:#ffffff; --soft:#f7f8fa; --sunken:#f1f3f6;
-  --line:#e6e8ec; --line-2:#d9dde3;
-  --ink:#16181d; --body:#3d4350; --mute:#7b8494;
-  --pri:#2563eb; --pri-ink:#1d4ed8; --pri-soft:#eff5ff; --pri-line:#bfd6ff;
-  --ok:#0f7b52; --ok-soft:#e7f6ef; --warn:#a76900; --warn-soft:#fdf3e2;
-  --no:#c02626; --no-soft:#fdeeee;
-  --r:10px; --r-sm:7px;
-  --shadow:0 1px 2px rgba(16,24,40,.05), 0 1px 3px rgba(16,24,40,.04);
+  /* 스스닷컴 측량 도면 — 공개 페이지(shared/base.css)와 같은 값이다.
+     제품이 하나면 화면도 하나여야 한다. 전에는 여기만 파란 SaaS 였고,
+     로그인하면 딴 사이트에 온 것 같았다.
+     ⚠ 두 저장소에 같은 값이 두 벌 있다. 한쪽만 고치면 조용히 어긋난다 —
+       바꿀 일이 있으면 jasons-company/cafe-trade-area/shared/base.css 도 함께. */
+  --bg:#f5f2ea; --soft:#efeae0; --sunken:#e6dfd1;
+  --line:#cabfad; --line-2:#ddd4c4;
+  --ink:#17130f; --body:#4b423a; --mute:#8a7f6e;
+  /* 시그널은 로스트 시에나 하나다. 파랑을 쓰지 않는다 — 도면에 파랑은 없다. */
+  --pri:#9a3b1b; --pri-ink:#6f2911; --pri-soft:#e8dbd1; --pri-line:#c9a992;
+  --ok:#2f5d50; --ok-soft:#dde8e3; --warn:#b0822a; --warn-soft:#f0e6d0;
+  --no:#a8231c; --no-soft:#f2ddda;
+  /* 도면은 각지고 그림자가 없다. 종이 위에 인쇄된 것이지 떠 있는 것이 아니다. */
+  --r:2px; --r-sm:2px;
+  --shadow:none;
   --maxw:1120px;
 }
 *{box-sizing:border-box}
@@ -37,19 +44,21 @@ body{
   /* 내용이 짧은 화면(로그인·빈 목록)에서 푸터가 중간에 떠 있지 않게 한다 */
   margin:0;min-height:100vh;display:flex;flex-direction:column;
   background:var(--soft);color:var(--ink);
-  font:400 15px/1.6 -apple-system,BlinkMacSystemFont,'Pretendard','Apple SD Gothic Neo',
-       'Malgun Gothic',Roboto,'Helvetica Neue',sans-serif;
-  letter-spacing:-.011em;-webkit-font-smoothing:antialiased;
+  font:400 15px/1.65 'IBM Plex Sans KR','Pretendard',-apple-system,'Apple SD Gothic Neo',
+       'Malgun Gothic',sans-serif;
+  letter-spacing:-.01em;-webkit-font-smoothing:antialiased;
+  /* 종이 그레인 — 평면 색이 인쇄물처럼 앉는다. 공개 페이지와 같은 것. */
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)' opacity='.16'/%3E%3C/svg%3E");
 }
 a{color:var(--pri);text-decoration:none}
 a:hover{text-decoration:underline}
 :focus-visible{outline:2px solid var(--pri);outline-offset:2px;border-radius:4px}
-h1,h2,h3{margin:0;letter-spacing:-.022em;font-weight:650;color:var(--ink)}
+h1,h2,h3{margin:0;font-family:'Hahmlet','Nanum Myeongjo',serif;letter-spacing:-.02em;font-weight:700;color:var(--ink)}
 h1{font-size:26px;line-height:1.3}
 h2{font-size:17px}
 h3{font-size:14px}
 p{margin:0}
-.mono{font-family:ui-monospace,'SF Mono',Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+.mono{font-family:'IBM Plex Mono',ui-monospace,'SF Mono',Menlo,monospace;font-variant-numeric:tabular-nums}
 .num{font-variant-numeric:tabular-nums}
 
 .skip{position:absolute;left:-9999px;top:0;z-index:99;padding:10px 16px;
@@ -64,8 +73,8 @@ header.top{background:var(--bg);border-bottom:1px solid var(--line);position:sti
 .top-in{display:flex;align-items:center;gap:8px;height:58px}
 .brand{display:flex;align-items:center;gap:9px;font-weight:650;color:var(--ink);font-size:15px}
 .brand:hover{text-decoration:none}
-.brand .mk{width:26px;height:26px;border-radius:8px;background:var(--pri);color:#fff;
-  display:grid;place-items:center;font-size:13px;font-weight:700}
+.brand .mk{width:26px;height:26px;border-radius:50%;background:var(--pri);color:#fff;
+  display:grid;place-items:center;font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:13px}
 .nav{display:flex;gap:2px;margin-left:18px}
 .nav a{padding:7px 12px;border-radius:var(--r-sm);color:var(--body);font-size:14px;font-weight:500}
 .nav a:hover{background:var(--sunken);text-decoration:none}
@@ -120,15 +129,19 @@ td.strong{color:var(--ink);font-weight:550}
 .empty{padding:40px 20px;text-align:center;color:var(--mute);font-size:14px}
 
 /* ── 배지 · 상태 ───────────────────── */
-.tag{display:inline-flex;align-items:center;gap:5px;padding:3px 9px;border-radius:999px;
-  font-size:12.5px;font-weight:600;white-space:nowrap}
+/* 도면에 알약은 없다 — 각진 라벨에 테두리를 준다. 배경만으로 가르면
+   종이 바탕에서 통과와 보류가 비슷해 보인다. */
+.tag{display:inline-flex;align-items:center;gap:5px;padding:2px 8px;border-radius:2px;
+  border:1px solid currentColor;font-family:'IBM Plex Mono',ui-monospace,monospace;
+  font-size:12px;font-weight:500;letter-spacing:.02em;white-space:nowrap}
 .t-통과{background:var(--ok-soft);color:var(--ok)}
 .t-보류{background:var(--warn-soft);color:var(--warn)}
-.t-부결{background:var(--no-soft);color:var(--no)}
+/* 부결은 이 화면에서 가장 강한 신호다 — 유일하게 채워 넣는다 */
+.t-부결{background:var(--no);color:#fff;border-color:var(--no)}
 .t-대기,.t-실행중{background:var(--pri-soft);color:var(--pri-ink)}
 .t-완료{background:var(--ok-soft);color:var(--ok)}
-.t-실패{background:var(--no-soft);color:var(--no)}
-.t-plain{background:var(--sunken);color:var(--body)}
+.t-실패{background:var(--no);color:#fff;border-color:var(--no)}
+.t-plain{background:transparent;color:var(--mute)}
 .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
 
 /* ── 알림 ─────────────────────────── */
@@ -144,13 +157,15 @@ td.strong{color:var(--ink);font-weight:550}
 .tiles{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
 .tile{background:var(--bg);border:1px solid var(--line);border-radius:var(--r);padding:15px 17px;
   box-shadow:var(--shadow)}
-.tile .k{font-size:12.5px;color:var(--mute);font-weight:500}
-.tile .v{margin-top:5px;font-size:25px;font-weight:680;letter-spacing:-.03em;
+.tile .k{font-family:'IBM Plex Mono',ui-monospace,monospace;font-size:10.5px;letter-spacing:.16em;text-transform:uppercase;color:var(--mute);font-weight:500}
+.tile .v{margin-top:5px;font-family:'IBM Plex Mono',ui-monospace,monospace;
+  font-size:25px;font-weight:500;letter-spacing:-.02em;
   font-variant-numeric:tabular-nums;color:var(--ink)}
+.tile .v.txt{font-family:inherit;font-size:22px;font-weight:600;letter-spacing:-.03em}
 .tile .v small{font-size:14px;font-weight:500;color:var(--mute);margin-left:3px}
 .tile.acc .v{color:var(--pri-ink)}
-.bar{height:5px;border-radius:3px;background:var(--sunken);margin-top:10px;overflow:hidden}
-.bar i{display:block;height:100%;background:var(--pri);border-radius:3px}
+.bar{height:5px;background:var(--sunken);margin-top:10px;overflow:hidden;border:1px solid var(--line-2)}
+.bar i{display:block;height:100%;background:var(--pri)}
 .bar.hot i{background:var(--warn)}
 .bar.full i{background:var(--no)}
 
@@ -215,7 +230,7 @@ input[type=file]::file-selector-button:hover{background:var(--sunken)}
   cursor:pointer;line-height:1.4}
 .check input{width:16px;height:16px;accent-color:var(--pri);margin:0;flex:0 0 auto}
 .chips{display:flex;flex-wrap:wrap;gap:8px}
-.check.chip{border:1px solid var(--line-2);border-radius:999px;padding:7px 13px 7px 11px;
+.check.chip{border:1px solid var(--line-2);border-radius:2px;padding:7px 13px 7px 11px;
   background:var(--bg);transition:border-color .13s,background .13s}
 .check.chip:hover{background:var(--sunken)}
 .check.chip:has(input:checked){border-color:var(--pri);background:var(--pri-soft);
@@ -270,8 +285,12 @@ def tile(k: str, v: str, unit: str = "", accent: bool = False, bar: tuple | None
         cls = "full" if pct >= 100 else ("hot" if pct >= 80 else "")
         b = f'<div class="bar {cls}"><i style="width:{pct}%"></i></div>'
     u = f"<small>{E(unit)}</small>" if unit else ""
+    # 수치는 모노로 조판한다(자릿수가 맞아야 표가 읽힌다). 값이 숫자로 시작하지
+    # 않으면 — '매출 추정 모드 = B(앵커링)' 같은 것 — 본문 서체로 둔다. 한글에
+    # 모노를 걸면 괄호만 모노가 되고 자간이 벌어져 글자가 흩어져 보인다.
+    글자값 = not str(v).strip()[:1].isdigit()
     return (f'<div class="tile{" acc" if accent else ""}"><div class="k">{E(k)}</div>'
-            f'<div class="v">{E(v)}{u}</div>{b}</div>')
+            f'<div class="v{" txt" if 글자값 else ""}">{E(v)}{u}</div>{b}</div>')
 
 
 def field(name: str, label: str, value="", kind: str = "text", *,
@@ -295,11 +314,12 @@ def field(name: str, label: str, value="", kind: str = "text", *,
 
 
 # 인라인 파비콘. 파일 하나를 더 두지 않으려고 data URI 로 박는다
+# 공개 페이지(스스닷컴 소개·입력·상담)와 같은 마크 — 종이 바탕에 점선 등시선.
 FAVICON = ("%3Csvg%20xmlns='http://www.w3.org/2000/svg'%20viewBox='0%200%2032%2032'%3E"
-           "%3Crect%20width='32'%20height='32'%20rx='8'%20fill='%232563eb'/%3E"
-           "%3Ccircle%20cx='16'%20cy='16'%20r='8'%20fill='none'%20stroke='%23fff'%20"
-           "stroke-width='2.5'/%3E%3Ccircle%20cx='16'%20cy='16'%20r='2.5'%20fill='%23fff'/%3E"
-           "%3C/svg%3E")
+           "%3Crect%20width='32'%20height='32'%20fill='%23efeae0'/%3E"
+           "%3Ccircle%20cx='16'%20cy='16'%20r='11'%20fill='none'%20stroke='%239a3b1b'%20"
+           "stroke-width='1.4'%20stroke-dasharray='3%203'/%3E"
+           "%3Ccircle%20cx='16'%20cy='16'%20r='3.6'%20fill='%239a3b1b'/%3E%3C/svg%3E")
 
 def checkbox(name: str, label: str, checked: bool = False, *,
              help_text: str = "", required: bool = False, value: str = "1") -> str:
@@ -405,8 +425,13 @@ def layout(title: str, body: str, user: dict | None = None, *,
     return f"""<!DOCTYPE html><html lang="ko"><head><meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <meta name="robots" content="noindex"/><meta name="color-scheme" content="light"/>
-<meta name="theme-color" content="#ffffff"/>
+<meta name="theme-color" content="#efeae0"/>
 <link rel="icon" href="data:image/svg+xml,{FAVICON}"/>
+<!-- 공개 페이지와 같은 서체. 못 받아 와도 display=swap 이라 본문은 바로 뜨고
+     폴백 스택으로 읽힌다 — 사내망에서 외부가 막혀도 화면이 비지 않는다. -->
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+<link href="https://fonts.googleapis.com/css2?family=Hahmlet:wght@500;700&amp;family=IBM+Plex+Mono:wght@400;500&amp;family=IBM+Plex+Sans+KR:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
 <title>{E(title)} · 스스닷컴</title>{head}
 <style>{CSS}</style></head><body>
 <a class="skip" href="#main">본문 바로가기</a>
