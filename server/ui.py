@@ -379,8 +379,13 @@ def md_to_html(md: str) -> str:
     return f'<div class="md">{"".join(out)}</div>'
 
 
+# 관리자만 보는 것은 여기 적어 둔다. 링크를 빼먹으면 화면은 있는데 갈 데가 없다 —
+# 감사 로그가 그랬다. 화면마다 '열람·내보내기 기록이 남습니다' 라고 말해 놓고
+# 그 기록을 볼 자리가 어디에도 없었다.
+관리자메뉴 = {"/team", "/audit"}
 NAV = [("/dashboard", "개요"), ("/consults", "상담"), ("/runs", "심의"),
-       ("/stores", "기존점"), ("/settings", "설정"), ("/team", "팀")]
+       ("/stores", "기존점"), ("/settings", "설정"), ("/team", "팀"),
+       ("/audit", "감사 로그")]
 
 
 def layout(title: str, body: str, user: dict | None = None, *,
@@ -390,7 +395,7 @@ def layout(title: str, body: str, user: dict | None = None, *,
         links = "".join(
             f'<a href="{h}"{" class=on" if h == active else ""}>{E(t)}</a>'
             for h, t in NAV
-            if h != "/team" or user.get("role") == "관리자")
+            if h not in 관리자메뉴 or user.get("role") == "관리자")
         top = f"""<nav class="nav">{links}</nav>
       <div class="top-end">
         <span class="who"><b>{E(user['name'] or user['email'])}</b> · {E(user['role'])}</span>

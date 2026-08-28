@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import json
+import re
 import os
 import sys
 import tempfile
@@ -390,6 +391,24 @@ class TestStoresPage(unittest.TestCase):
         self.assertNotIn("좌표없음", 이름)
         self.assertNotIn("매출없음", 이름)
 
+    def test_퇴짜를_놓아도_입력을_돌려준다(self):
+        """특히 기준점포. 비워 두면 '아니오' 로 돌아가는데, Mode B 는 기준점포를
+        앵커로 매출을 추정한다 — 다시 저장하면 앵커가 아닌 점포로 조용히 들어간다."""
+        c = client_for("운영@a.kr")
+        낸것 = {"점포명": "성수점", "월매출_만원": "", "기준점포": "Y",
+              "위도": "37.5445", "경도": "127.0557", "좌석수": "24",
+              "월임대료_만원": "420", "전용면적_평": "18", "주소": "서울 성동구"}
+        r = c.post("/stores", data=낸것, follow_redirects=False)
+        self.assertEqual(r.status_code, 400)
+        폼 = r.text[r.text.find('action="/stores"'):]
+        for k in ("점포명", "위도", "경도", "좌석수", "월임대료_만원",
+                  "전용면적_평", "주소"):
+            m = re.search(r'name="%s"[^>]*value="([^"]*)"' % re.escape(k), 폼)
+            self.assertEqual(m.group(1), 낸것[k], k)
+        블록 = re.search(r'name="기준점포"[^>]*>(.*?)</select>', 폼, re.S)
+        고름 = re.search(r'<option value="([^"]*)"\s+selected', 블록.group(1))
+        self.assertEqual(고름.group(1), "Y", "기준점포가 '아니오' 로 돌아갔다")
+
     def test_추가와_삭제가_감사에_남는다(self):
         c = client_for("운영@a.kr")
         c.post("/stores", data={"점포명": "3호점", "월매출_만원": "2800",
@@ -457,6 +476,21 @@ class TestTeamPage(unittest.TestCase):
                                     follow_redirects=False)
         self.assertEqual(영업.get("/dashboard").status_code, 401)
 
+    def test_퇴짜를_놓아도_입력을_돌려주되_비밀번호는_빼고(self):
+        c = client_for("관리자@a.kr")
+        r = c.post("/team", data={"email": "새사람@a.kr", "name": "새사람",
+                                  "role": "영업", "password": "짧음"},
+                   follow_redirects=False)
+        self.assertEqual(r.status_code, 400)
+        폼 = r.text[r.text.find('action="/team"'):]
+        self.assertEqual(
+            re.search(r'name="email"[^>]*value="([^"]*)"', 폼).group(1), "새사람@a.kr")
+        self.assertEqual(
+            re.search(r'name="name"[^>]*value="([^"]*)"', 폼).group(1), "새사람")
+        # 비밀번호는 화면에 다시 실어 보내지 않는다
+        m = re.search(r'name="password"[^>]*value="([^"]*)"', 폼)
+        self.assertIn(m.group(1) if m else "", ("", None))
+
     def test_자기_계정은_비활성화하지_못한다(self):
         관리 = client_for("관리자@a.kr")
         r = 관리.post(f"/team/{self.ids['A']['관리자']}/toggle")
@@ -470,6 +504,23 @@ class TestTeamPage(unittest.TestCase):
             self.assertEqual(
                 con.execute("SELECT active FROM users WHERE id=?",
                             (self.ids["B"]["영업"],)).fetchone()["active"], 1)
+
+    def test_감사_로그로_갈_길이_있다(self):
+        """화면마다 '열람·내보내기 기록이 남습니다' 라고 말한다. 그 기록을 볼 링크가
+        없으면 그 말은 확인할 수 없는 약속이다."""
+        import re as _re
+        html = client_for("관리자@a.kr").get("/dashboard").text
+        nav = _re.search(r"<nav[^>]*>(.*?)</nav>", html, _re.S).group(1)
+        self.assertIn('href="/audit"', nav)
+        self.assertEqual(client_for("관리자@a.kr").get("/audit").status_code, 200)
+
+    def test_감사_로그는_관리자만_본다(self):
+        import re as _re
+        for who in ("운영@a.kr", "영업@a.kr"):
+            html = client_for(who).get("/dashboard").text
+            nav = _re.search(r"<nav[^>]*>(.*?)</nav>", html, _re.S).group(1)
+            self.assertNotIn('href="/audit"', nav, who)
+            self.assertEqual(client_for(who).get("/audit").status_code, 403, who)
 
     def test_관리자만_팀을_본다(self):
         self.assertEqual(client_for("운영@a.kr").get("/team").status_code, 403)
@@ -553,6 +604,46 @@ class TestConsultPrivacy(unittest.TestCase):
         self.assertIn("동의", r.text)
         with db.tx() as con:
             self.assertEqual(db.rows_for_org(con, "consults", self.ids["A"]["org"]), [])
+
+    def test_퇴짜를_놓아도_입력을_돌려준다(self):
+        """상담자는 고객 앞에 앉아 있다. 열세 칸을 다시 묻게 하면 안 된다."""
+        r = self.등록(동의="")
+        self.assertEqual(r.status_code, 400)
+        폼 = r.text[r.text.find('action="/consults"'):]
+        for k in ("고객명", "고객전화번호", "거주지", "근무지", "희망지역",
+                  "희망평수", "보증금_만원", "권리금_만원", "메모"):
+            m = re.search(r'name="%s"[^>]*value="([^"]*)"' % re.escape(k), 폼)
+            self.assertIsNotNone(m, k)
+            self.assertEqual(m.group(1), self.폼[k], k)
+        고른것 = re.findall(r'name="희망상권"[^>]*?value="([^"]*)"[^>]*checked', 폼)
+        self.assertEqual(sorted(고른것), sorted(self.폼["희망상권"]))
+
+    def test_퇴짜_뒤_select_가_기본값으로_돌아가지_않는다(self):
+        """비워 두면 화면은 기본값('현금'·'점주+알바')으로 돌아간다. 그건 빈 칸이 아니라
+        **다른 값**이다. 동의만 체크하고 저장하면 고객이 말한 '오토' 대신 '점주+알바'
+        가 저장되고, 고정인건비가 달라지니 BEP 와 판정이 함께 바뀐다."""
+        r = self.등록(동의="")
+        폼 = r.text[r.text.find('action="/consults"'):]
+        for 이름, 낸것, 기본 in (("투자금형태", "현금+대출", "현금"),
+                            ("운영형태", "오토", "점주+알바")):
+            블록 = re.search(r'name="%s"[^>]*>(.*?)</select>' % re.escape(이름), 폼, re.S)
+            고름 = re.search(r'<option value="([^"]*)"\s+selected', 블록.group(1))
+            self.assertEqual(고름.group(1), 낸것, 이름)
+            self.assertNotEqual(고름.group(1), 기본, f"{이름} 가 기본값으로 돌아갔다")
+
+    def test_동의만은_되돌리지_않는다(self):
+        """나머지는 편의지만 동의는 사실 확인이다. 사람이 다시 눌러야 한다."""
+        r = self.등록(동의="")
+        폼 = r.text[r.text.find('action="/consults"'):]
+        상자 = re.search(r'name="동의"[^>]*type="checkbox"([^>]*)', 폼)
+        self.assertNotIn("checked", 상자.group(1))
+
+    def test_설정에_없는_값으로_퇴짜를_놓아도_돌려준다(self):
+        r = self.등록(운영형태="무인로봇")
+        self.assertEqual(r.status_code, 400)
+        폼 = r.text[r.text.find('action="/consults"'):]
+        m = re.search(r'name="고객명"[^>]*value="([^"]*)"', 폼)
+        self.assertEqual(m.group(1), "홍길동")
 
     def test_목록에는_연락처가_가려진다(self):
         self.등록()

@@ -277,10 +277,11 @@ def download_report(run_id: int, user=Depends(current_user), con=Depends(_con)):
 # 개인정보가 들어오는 유일한 자리다. 동의 없이 저장하지 않고, 연락처 전체 열람은
 # 감사 로그에 '개인정보 열람' 으로 따로 남기며, 심의로는 조건만 넘긴다.
 def _consults_html(con, user, msg: str = "", err: str = "",
-                   status: int = 200) -> HTMLResponse:
+                   status: int = 200, 낸값: dict | None = None) -> HTMLResponse:
     rows = db.rows_for_org(con, "consults", user["org_id"])
     return HTMLResponse(
-        views.consults_page(user, rows, orgdata.load_settings(con, user["org_id"]), msg, err),
+        views.consults_page(user, rows, orgdata.load_settings(con, user["org_id"]),
+                            msg, err, 낸값),
         status_code=status)
 
 
@@ -299,14 +300,23 @@ def add_consult(고객명: str = Form(...), 고객전화번호: str = Form(""),
                 메모: str = Form(""),
                 user=Depends(current_user), con=Depends(_con)):
     이름 = 고객명.strip()
+    # 퇴짜를 놓을 때 되돌려 줄 입력. 없으면 상담자가 고객 앞에서 열세 칸을 다시 묻고,
+    # select 는 기본값으로 되돌아가 고객이 말한 것과 다른 값이 조용히 저장된다.
+    낸값 = {"고객명": 고객명, "고객전화번호": 고객전화번호, "거주지": 거주지,
+          "근무지": 근무지, "동의": 동의, "희망지역": 희망지역, "희망평수": 희망평수,
+          "희망상권": 희망상권, "보증금_만원": 보증금_만원, "권리금_만원": 권리금_만원,
+          "투자금형태": 투자금형태, "운영형태": 운영형태, "메모": 메모}
     if not 이름:
-        return _consults_html(con, user, err="고객명을 넣으십시오.", status=400)
+        return _consults_html(con, user, err="고객명을 넣으십시오.", status=400,
+                              낸값=낸값)
     if not 동의.strip():
         # 브라우저의 required 는 우회할 수 있다. 개인정보는 서버에서도 막는다.
         return _consults_html(con, user, err="개인정보 수집·이용 동의를 받아야 저장할 수 "
-                              "있습니다. 동의 없이 연락처를 남기지 마십시오.", status=400)
+                              "있습니다. 동의 없이 연락처를 남기지 마십시오.", status=400,
+                              낸값=낸값)
     if not 고객전화번호.strip():
-        return _consults_html(con, user, err="연락처를 넣으십시오.", status=400)
+        return _consults_html(con, user, err="연락처를 넣으십시오.", status=400,
+                              낸값=낸값)
 
     st = orgdata.load_settings(con, user["org_id"])
     for 이름표, 값, 표 in [("투자금 형태", 투자금형태, st.get("투자금형태") or {}),
@@ -314,7 +324,7 @@ def add_consult(고객명: str = Form(...), 고객전화번호: str = Form(""),
         if 값.strip() and 값.strip() not in 표:
             # 표에 없는 값은 파이프라인이 조용히 무시한다. 저장 전에 막는 게 낫다.
             return _consults_html(con, user, err=f"설정에 {이름표} '{값}' 가 없습니다.",
-                                  status=400)
+                                  status=400, 낸값=낸값)
 
     고른상권 = [x for x in 희망상권 if x in consults.상권유형]
     cur = con.execute(
@@ -359,10 +369,12 @@ def delete_consult(consult_id: int, user=Depends(current_user), con=Depends(_con
 
 
 # ── 기존점 ────────────────────────────────────────────
-def _stores_html(con, user, msg: str = "", err: str = "", status: int = 200) -> HTMLResponse:
+def _stores_html(con, user, msg: str = "", err: str = "", status: int = 200,
+                 낸값: dict | None = None) -> HTMLResponse:
     stores = db.rows_for_org(con, "stores", user["org_id"])
     return HTMLResponse(
-        views.stores_page(user, stores, orgdata.readiness(con, user["org_id"]), msg, err),
+        views.stores_page(user, stores, orgdata.readiness(con, user["org_id"]),
+                          msg, err, 낸값),
         status_code=status)
 
 
@@ -379,16 +391,19 @@ def add_store(점포명: str = Form(...), 월매출_만원: str = Form(""),
               user=Depends(current_user), con=Depends(_con)):
     require_role(user, plans.CAN_RUN)
     이름 = 점포명.strip()
+    낸값 = {"점포명": 점포명, "월매출_만원": 월매출_만원, "기준점포": 기준점포,
+          "위도": 위도, "경도": 경도, "좌석수": 좌석수,
+          "월임대료_만원": 월임대료_만원, "전용면적_평": 전용면적_평, "주소": 주소}
     if not 이름:
-        return _stores_html(con, user, err="점포명을 넣으십시오.", status=400)
+        return _stores_html(con, user, err="점포명을 넣으십시오.", status=400, 낸값=낸값)
     매출, lat, lon = _num(월매출_만원), _num(위도), _num(경도)
     if 매출 is None or 매출 <= 0:
         return _stores_html(con, user, err=f"{이름}: 월매출이 없으면 추정에 쓰이지 "
-                            "않습니다. 실매출을 넣으십시오.", status=400)
+                            "않습니다. 실매출을 넣으십시오.", status=400, 낸값=낸값)
     if lat is None or lon is None:
         return _stores_html(con, user, err=f"{이름}: 좌표가 없으면 M1 등시선을 그릴 수 "
                             "없어 회귀 표본에서 빠집니다. 위도·경도를 넣으십시오.",
-                            status=400)
+                            status=400, 낸값=낸값)
     con.execute(
         "INSERT INTO stores (org_id, 점포명, 주소, 위도, 경도, 기준점포, 월매출_만원, "
         "좌석수, 월임대료_만원, 전용면적_평) VALUES (?,?,?,?,?,?,?,?,?,?)",
@@ -461,11 +476,12 @@ def save_settings(브랜드: str = Form(""), 자사브랜드티어: str = Form("
 
 
 # ── 팀 ────────────────────────────────────────────────
-def _team_html(con, user, msg: str = "", err: str = "", status: int = 200) -> HTMLResponse:
+def _team_html(con, user, msg: str = "", err: str = "", status: int = 200,
+               낸값: dict | None = None) -> HTMLResponse:
     users = db.rows_for_org(con, "users", user["org_id"])
     return HTMLResponse(
         views.team_page(user, users, org_of(con, user),
-                        plans.seats_used(con, user["org_id"]), msg, err),
+                        plans.seats_used(con, user["org_id"]), msg, err, 낸값),
         status_code=status)
 
 
@@ -481,11 +497,12 @@ def add_member(email: str = Form(...), name: str = Form(""),
                user=Depends(current_user), con=Depends(_con)):
     require_role(user, plans.CAN_MANAGE)
     org = org_of(con, user)
+    낸값 = {"email": email, "name": name, "role": role}   # 비밀번호는 되돌리지 않는다
     if role not in plans.ROLES:
         return _team_html(con, user, err=f"역할은 {', '.join(plans.ROLES)} 중 하나여야 합니다.",
-                          status=400)
+                          status=400, 낸값=낸값)
     if len(password) < 8:
-        return _team_html(con, user, err="임시 비밀번호는 8자 이상으로 하십시오.", status=400)
+        return _team_html(con, user, err="임시 비밀번호는 8자 이상으로 하십시오.", status=400, 낸값=낸값)
     ok, why = plans.seat_check(org["plan"], plans.seats_used(con, user["org_id"]))
     if not ok:
         return _team_html(con, user, err=why, status=402)
@@ -496,7 +513,7 @@ def add_member(email: str = Form(...), name: str = Form(""),
              auth.hash_pw(password)))
     except sqlite3.IntegrityError:
         # email 은 전 조직에서 UNIQUE 다. 다른 조직에 있는 계정인지까지는 말하지 않는다.
-        return _team_html(con, user, err="이미 쓰이고 있는 이메일입니다.", status=409)
+        return _team_html(con, user, err="이미 쓰이고 있는 이메일입니다.", status=409, 낸값=낸값)
     db.log(con, user["org_id"], user["id"], "구성원 추가", email.strip().lower(), role)
     con.commit()
     return RedirectResponse("/team", status_code=303)

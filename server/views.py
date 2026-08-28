@@ -139,7 +139,21 @@ def _조건표(row, settings) -> str:
 </div></div>"""
 
 
-def consults_page(user, rows, settings, msg: str = "", err: str = "") -> str:
+def consults_page(user, rows, settings, msg: str = "", err: str = "",
+                  낸값: dict | None = None) -> str:
+    """낸값 은 방금 보냈다가 퇴짜맞은 입력이다.
+
+    이걸 되돌려 주지 않으면 상담자가 고객 앞에서 열세 칸을 다시 묻는다. 그보다 나쁜
+    것은 select 다 — 비워 두면 화면은 **기본값**으로 돌아가는데, 그건 빈 칸이 아니라
+    '현금 · 점주+알바' 라는 값이다. 동의만 체크하고 저장하면 고객이 말한 '점주' 대신
+    '점주+알바' 가 들어가고, 고정비가 달라지니 BEP 와 판정이 함께 바뀐다.
+    """
+    낸 = 낸값 or {}
+
+    def 온것(key, 기본=""):
+        v = 낸.get(key)
+        return 기본 if v in (None, "") else str(v)
+
     행 = "".join(f"""<tr>
       <td class="strong"><a href="/consults/{r['id']}">{E(r['고객명'])}</a></td>
       <td class="mono" style="font-size:13px;color:var(--mute)">{E(C.마스킹(r['고객전화번호']))}</td>
@@ -154,33 +168,34 @@ def consults_page(user, rows, settings, msg: str = "", err: str = "") -> str:
   <form method="post" action="/consults">
     <h3 class="sec">고객 정보</h3>
     <div class="grid2">
-      {field("고객명", "고객명", required=True)}
-      {field("고객전화번호", "연락처", kind="tel", required=True,
+      {field("고객명", "고객명", 온것("고객명"), required=True)}
+      {field("고객전화번호", "연락처", 온것("고객전화번호"), kind="tel", required=True,
              attrs=' placeholder="010-0000-0000"')}
     </div>
     <div class="grid2">
-      {field("거주지", "거주지", help_text="통근 가능 범위를 가늠할 때만 봅니다")}
-      {field("근무지", "근무지", help_text="통근 가능 범위를 가늠할 때만 봅니다")}
+      {field("거주지", "거주지", 온것("거주지"), help_text="통근 가능 범위를 가늠할 때만 봅니다")}
+      {field("근무지", "근무지", 온것("근무지"), help_text="통근 가능 범위를 가늠할 때만 봅니다")}
     </div>
-    {checkbox("동의", "개인정보 수집·이용에 동의를 받았습니다", required=True,
+    {checkbox("동의", "개인정보 수집·이용에 동의를 받았습니다", bool(낸.get("동의")),
+              required=True,
               help_text=f"보관기간 {C.보관개월(settings)}개월. 동의 없이는 저장하지 않습니다.")}
 
     <h3 class="sec">창업 희망 조건</h3>
     <div class="grid2">
-      {field("희망지역", "창업 희망 지역", help_text="선호 순으로, 쉼표로 나눠 적습니다 (예: 강남, 성수, 홍대). 후보지 주소·이름에 이 말이 들어가야 목록에 남습니다")}
-      {field("희망평수", "희망 평수", kind="number", attrs=' step="1" min="1" max="300"',
+      {field("희망지역", "창업 희망 지역", 온것("희망지역"), help_text="선호 순으로, 쉼표로 나눠 적습니다 (예: 강남, 성수, 홍대). 후보지 주소·이름에 이 말이 들어가야 목록에 남습니다")}
+      {field("희망평수", "희망 평수", 온것("희망평수"), kind="number", attrs=' step="1" min="1" max="300"',
              help_text="±30% 밖의 물건은 목록에서 뺍니다")}
     </div>
-    {checks("희망상권", "희망 상권", C.상권유형,
+    {checks("희망상권", "희망 상권", C.상권유형, 낸.get("희망상권") or (),
             help_text="고르지 않으면 상권 유형으로 거르지 않습니다")}
 
     <h3 class="sec">투자 계획</h3>
     <div class="grid3">
-      {field("보증금_만원", "보증금 (만원)", kind="number", attrs=' step="100" min="0"',
+      {field("보증금_만원", "보증금 (만원)", 온것("보증금_만원"), kind="number", attrs=' step="100" min="0"',
              help_text="알고리즘 미사용 — 투자 한도 필터로만")}
-      {field("권리금_만원", "권리금 (만원)", kind="number", attrs=' step="100" min="0"',
+      {field("권리금_만원", "권리금 (만원)", 온것("권리금_만원"), kind="number", attrs=' step="100" min="0"',
              help_text="알고리즘 미사용 — 투자 한도 필터로만")}
-      {field("투자금형태", "투자금 형태", "현금",
+      {field("투자금형태", "투자금 형태", 온것("투자금형태", "현금"),
              options=[(k, f"{k} — {v.get('설명','')}")
                       for k, v in (settings.get("투자금형태") or {}).items()],
              help_text="월 금융비용이 고정비에 더해집니다 — BEP 가 바뀝니다")}
@@ -188,11 +203,11 @@ def consults_page(user, rows, settings, msg: str = "", err: str = "") -> str:
 
     <h3 class="sec">운영 계획</h3>
     <div class="grid2">
-      {field("운영형태", "운영 형태", "점주+알바",
+      {field("운영형태", "운영 형태", 온것("운영형태", "점주+알바"),
              options=[(k, f"{k} — 고정인건비 {v.get('고정인건비_월_만원', 0):,.0f}만원")
                       for k, v in (settings.get("운영형태") or {}).items()],
              help_text="상담에서 받는 값 중 판정을 가장 크게 움직입니다")}
-      {field("메모", "메모", help_text="상담 기록용. 알고리즘에 들어가지 않습니다")}
+      {field("메모", "메모", 온것("메모"), help_text="상담 기록용. 알고리즘에 들어가지 않습니다")}
     </div>
     <button class="pri" type="submit">상담 저장</button>
   </form></div>""" if 쓰기 else '<div class="bd"><p class="hint">상담 작성 권한이 없습니다.</p></div>'
@@ -412,7 +427,20 @@ def site_page(user, run, batch, site, idx) -> str:
 
 
 # ── 기존점 ───────────────────────────────────────────
-def stores_page(user, stores, ready, msg: str = "", err: str = "") -> str:
+def stores_page(user, stores, ready, msg: str = "", err: str = "",
+                낸값: dict | None = None) -> str:
+    """낸값 은 방금 보냈다가 퇴짜맞은 입력이다 (consults_page 와 같은 이유).
+
+    여기서 특히 위험한 것은 기준점포다. 비워 두면 화면이 '아니오' 로 돌아가는데,
+    Mode B 는 기준점포를 앵커로 매출을 추정한다 — 다시 저장하면 앵커가 아닌 점포로
+    조용히 들어간다.
+    """
+    낸 = 낸값 or {}
+
+    def 온것(key, 기본=""):
+        x = 낸.get(key)
+        return 기본 if x in (None, "") else str(x)
+
     행 = "".join(f"""<tr>
       <td class="strong">{E(s['점포명'])}</td>
       <td>{tag('기준점포','통과') if str(s['기준점포']).upper().startswith(('Y','예','O')) else ''}</td>
@@ -439,19 +467,19 @@ def stores_page(user, stores, ready, msg: str = "", err: str = "") -> str:
 <div class="card"><div class="hd"><h2>기존점 추가</h2></div><div class="bd">
   <form method="post" action="/stores">
     <div class="grid3">
-      {field("점포명", "점포명", required=True)}
-      {field("월매출_만원", "월매출 (만원)", kind="number", required=True, attrs=' step="1" min="0"')}
-      {field("기준점포", "기준점포", options=[("N","아니오"),("Y","예 — Mode B 앵커")])}
+      {field("점포명", "점포명", 온것("점포명"), required=True)}
+      {field("월매출_만원", "월매출 (만원)", 온것("월매출_만원"), kind="number", required=True, attrs=' step="1" min="0"')}
+      {field("기준점포", "기준점포", 온것("기준점포", "N"), options=[("N","아니오"),("Y","예 — Mode B 앵커")])}
     </div>
     <div class="grid3">
-      {field("위도", "위도", kind="number", required=True, attrs=' step="0.000001" min="33" max="39"')}
-      {field("경도", "경도", kind="number", required=True, attrs=' step="0.000001" min="124" max="132"')}
-      {field("좌석수", "좌석수", kind="number", attrs=' step="1" min="0"')}
+      {field("위도", "위도", 온것("위도"), kind="number", required=True, attrs=' step="0.000001" min="33" max="39"')}
+      {field("경도", "경도", 온것("경도"), kind="number", required=True, attrs=' step="0.000001" min="124" max="132"')}
+      {field("좌석수", "좌석수", 온것("좌석수"), kind="number", attrs=' step="1" min="0"')}
     </div>
     <div class="grid3">
-      {field("월임대료_만원", "월임대료 (만원)", kind="number", attrs=' step="1" min="0"')}
-      {field("전용면적_평", "전용면적 (평)", kind="number", attrs=' step="0.1" min="0"')}
-      {field("주소", "주소")}
+      {field("월임대료_만원", "월임대료 (만원)", 온것("월임대료_만원"), kind="number", attrs=' step="1" min="0"')}
+      {field("전용면적_평", "전용면적 (평)", 온것("전용면적_평"), kind="number", attrs=' step="0.1" min="0"')}
+      {field("주소", "주소", 온것("주소"))}
     </div>
     <button class="pri" type="submit">추가</button>
   </form></div></div>
@@ -514,7 +542,14 @@ def settings_page(user, st, msg: str = "", err: str = "") -> str:
 
 
 # ── 팀 ─────────────────────────────────────────────
-def team_page(user, users, org, seats, msg: str = "", err: str = "") -> str:
+def team_page(user, users, org, seats, msg: str = "", err: str = "",
+              낸값: dict | None = None) -> str:
+    낸 = 낸값 or {}
+
+    def 온것(key, 기본=""):
+        x = 낸.get(key)
+        return 기본 if x in (None, "") else str(x)
+
     행 = "".join(f"""<tr>
       <td class="strong">{E(u['name'] or '—')}</td>
       <td class="mono" style="font-size:13px">{E(u['email'])}</td>
@@ -537,9 +572,9 @@ def team_page(user, users, org, seats, msg: str = "", err: str = "") -> str:
 <div class="card"><div class="hd"><h2>구성원 추가</h2></div><div class="bd">
   <form method="post" action="/team">
     <div class="grid3">
-      {field("email", "이메일", kind="email", required=True)}
-      {field("name", "이름")}
-      {field("role", "역할", "영업", options=[(r,r) for r in plans.ROLES])}
+      {field("email", "이메일", 온것("email"), kind="email", required=True)}
+      {field("name", "이름", 온것("name"))}
+      {field("role", "역할", 온것("role", "영업"), options=[(r,r) for r in plans.ROLES])}
     </div>
     {field("password", "임시 비밀번호", kind="password", required=True,
            help_text="본인에게 전달하고 바꾸게 하십시오. 비밀번호 변경 화면은 아직 없습니다.")}
@@ -566,4 +601,4 @@ def audit_page(user, rows, users) -> str:
 <div class="card"><div class="bd tight">
   <table><thead><tr><th>시각</th><th>사용자</th><th>행위</th><th>대상</th><th>비고</th></tr></thead>
   <tbody>{행 or '<tr><td colspan=5 class="empty">기록이 없습니다.</td></tr>'}</tbody></table>
-</div></div>""", user, active="/team")
+</div></div>""", user, active="/audit")
