@@ -1011,6 +1011,30 @@ class TestDeployment(unittest.TestCase):
         ignore = (ROOT / ".gitignore").read_text(encoding="utf-8").split()
         self.assertIn(".env", ignore)
 
+    def test_이_테스트들이_CI_에서_실제로_돈다(self):
+        """이 파일은 조직 격리·권한·개인정보 방어선을 지킨다. 그런데 한동안
+        **배포할 때만** 돌았다 — deploy-fly.yml 안에서만. 손으로 배포를 누르지
+        않으면 server/ 를 고쳐도 아무것도 돌지 않았다. 알고리즘 테스트는
+        cafe-trade-area/analysis 안에서만 discover 하므로 여기까지 오지 않는다.
+
+        돌지 않는 테스트는 없는 테스트다."""
+        import yaml as _yaml
+        여기 = ROOT / ".github" / "workflows"
+        돌리는것 = []
+        for f in 여기.glob("*.yml"):
+            d = _yaml.safe_load(f.read_text(encoding="utf-8"))
+            트리거 = d.get("on") or d.get(True) or {}
+            if "push" not in 트리거:
+                continue                       # 손으로 눌러야 도는 것은 세지 않는다
+            글 = f.read_text(encoding="utf-8")
+            if "discover -s tests" not in 글:
+                continue
+            경로 = (트리거["push"] or {}).get("paths")
+            if 경로 is None or any(p.startswith("server/") for p in 경로):
+                돌리는것.append(f.name)
+        self.assertTrue(돌리는것,
+                        "server/ 를 고쳤을 때 이 테스트들을 돌리는 워크플로가 없습니다")
+
     def test_배포_이미지가_데모_시드를_담지_않는다(self):
         """seed_demo.py 는 꾸며 낸 매출을 넣는다. 운영 이미지에 있으면 안 된다."""
         ignore = (ROOT / ".dockerignore").read_text(encoding="utf-8").split()

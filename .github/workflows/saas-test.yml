@@ -1,0 +1,71 @@
+name: SaaS 테스트
+
+# tests/test_saas.py 는 이 제품의 방어선을 지킨다 — 조직 격리, 권한, 개인정보가
+# 심의로 넘어가지 않는 것, 배포 설정이 앱과 어긋나지 않는 것.
+#
+# 이 워크플로가 없던 동안 그 83개는 **배포할 때만** 돌았다(deploy-fly.yml 안에서).
+# 손으로 배포를 누르지 않으면 server/ 를 고쳐도 아무것도 돌지 않았다. 알고리즘
+# 테스트(algo-test.yml)는 cafe-trade-area/analysis 안에서만 discover 하므로
+# 여기까지 오지 않는다.
+
+on:
+  push:
+    paths:
+      - "server/**"
+      - "tests/**"
+      - "scripts/**"
+      - "Dockerfile"
+      - "fly.toml"
+      - "render.yaml"
+      - "docker-compose.yml"
+      - ".env.example"
+      - "DEPLOY.md"
+      - "requirements*.txt"
+      - ".github/workflows/deploy-fly.yml"
+      - ".github/workflows/saas-test.yml"
+  pull_request:
+    paths:
+      - "server/**"
+      - "tests/**"
+      - "scripts/**"
+      - "Dockerfile"
+      - "fly.toml"
+      - "render.yaml"
+      - "docker-compose.yml"
+      - ".env.example"
+      - "DEPLOY.md"
+      - "requirements*.txt"
+      - ".github/workflows/deploy-fly.yml"
+      - ".github/workflows/saas-test.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: 의존성 설치
+        run: pip install -r requirements-dev.txt
+
+      - name: 테스트
+        run: python3 -m unittest discover -s tests -v
+
+      # 배포 설정이 앱과 어긋나지 않았는지. 배포할 때만 보면 늦다 — 어긋난 채로
+      # 며칠 지나고 나서야 배포가 막힌다.
+      - name: 배포 전 점검
+        run: python3 scripts/preflight.py
+
+      # 컴포즈가 실제로 풀리는지. 터널 프로필 변수를 필수로 잡았다가 터널을 쓰지
+      # 않는 사람의 docker compose up 까지 막은 적이 있다 — 그건 파일만 봐서는
+      # 안 보이고 풀어 봐야 나온다.
+      - name: compose 검증
+        run: |
+          docker compose config --services
+          CLOUDFLARE_TUNNEL_TOKEN=dummy docker compose --profile tunnel config --services
