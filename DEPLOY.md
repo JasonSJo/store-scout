@@ -230,12 +230,61 @@ Zero Trust → **Access → Applications → Add an application** → Self-hoste
 → 위 호스트명을 넣고, 정책을 **Emails ending in `@brand.co.kr`** 로 둔다.
 50명까지 무료다. 이러면 회사 메일이 없는 사람은 로그인 화면조차 보지 못한다.
 
+### 4. 늘 켜 두기 — 실제로 물리는 자리
+
+컨테이너는 `restart: unless-stopped` 라 도커만 살아 있으면 알아서 다시 뜬다.
+문제는 **도커 밖**이다. 아래 셋을 안 해 두면 어느 날 조용히 끊긴다.
+
+**① 재부팅 후 도커가 스스로 뜨는가**
+
+    리눅스   sudo systemctl enable docker
+    윈도우   Docker Desktop → Settings → General →
+             "Start Docker Desktop when you sign in" 체크
+             ⚠ 이건 **로그인해야** 뜬다. 재부팅 후 아무도 로그인하지 않으면
+               서버가 죽어 있다. 자동 로그인을 켜거나 WSL2 + systemd 로 두십시오.
+    macOS    Docker Desktop → Settings → General → "Start Docker Desktop..."
+
+**② 절전으로 잠들지 않는가**
+
+화면만 꺼지는 것은 괜찮다. **시스템이 잠들면** 터널이 끊긴다.
+
+    윈도우   설정 → 시스템 → 전원 → "다음 시간이 경과하면 PC를 절전 모드로" = 안 함
+             (노트북이면 "전원 연결 시" 쪽도 함께)
+    macOS    시스템 설정 → 배터리 → 옵션 → "디스플레이가 꺼져 있을 때 자동 잠자기 방지"
+    리눅스   sudo systemctl mask sleep.target suspend.target hibernate.target
+
+**③ 진짜 되는지 한 번 확인한다**
+
+말로만 켜 두면 안 된다. 재부팅해 보고 아무 조작 없이 도는지 본다:
+
+```bash
+sudo reboot
+# 다시 켜진 뒤, 아무것도 손대지 않고
+docker compose ps                       # app·tunnel 이 Up 인가
+curl -s http://127.0.0.1:8000/healthz    # pipeline=yes 인가
+```
+
+바깥 주소(`https://scout.brand.co.kr`)로도 한 번 들어가 보십시오. 여기까지 확인해야
+「늘 켜 둔다」가 사실이 된다.
+
+### 고쳐서 올릴 때
+
+```bash
+cd store-scout && git pull
+STORE_SCOUT_REV=$(git rev-parse HEAD) docker compose --profile tunnel up -d --build
+```
+
+볼륨은 그대로라 데이터가 남는다. **도는 중인 심의는 죽는다** — 재시작 때 '실패'로
+정리되지만 사용자는 다시 올려야 하므로, 아무도 안 쓸 때 하십시오.
+
 ### 알아 둘 것
 
-- **서버가 꺼지면 접속도 끊긴다.** 늘 켜 두는 기계여야 한다. 노트북은 맞지 않는다.
+- 로그: `docker compose logs -f app` · 터널은 `docker compose logs -f tunnel`
 - 백업은 `backup` 서비스가 올릴 때 한 벌, 그 뒤 24시간마다 한 벌 떠서 최근 14개를
   `./backup` 에 남긴다. **그 안에 기존점 실매출과 상담 개인정보가 들어 있다** —
   서버와 같은 수준으로 통제하거나 암호화해 다른 곳으로 옮기십시오.
+  이 PC 가 고장 나면 그 백업도 함께 사라진다. 다른 기계나 외장 디스크로 한 벌 더
+  옮겨 두십시오.
 - 터널을 끄려면 `docker compose --profile tunnel stop tunnel`. 앱은 계속 돌고
   사내망에서만 닿는다.
 
