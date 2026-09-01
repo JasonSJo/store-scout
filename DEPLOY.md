@@ -277,6 +277,27 @@ STORE_SCOUT_REV=$(git rev-parse HEAD) docker compose --profile tunnel up -d --bu
 볼륨은 그대로라 데이터가 남는다. **도는 중인 심의는 죽는다** — 재시작 때 '실패'로
 정리되지만 사용자는 다시 올려야 하므로, 아무도 안 쓸 때 하십시오.
 
+### 터널이 안 될 때
+
+```bash
+python3 scripts/tunnel_check.py
+```
+
+막힌 곳을 순서대로 짚어 준다. 읽기만 하고 아무것도 고치지 않는다.
+
+이 구성에서 특히 헷갈리는 자리가 하나 있다. **앱이 healthy 가 아니면 터널은 시작
+자체를 하지 않는다**(`depends_on: service_healthy`). 그래서 터널 로그를 아무리 봐도
+비어 있다 — 컨테이너가 없으니까. 그때는 터널이 아니라 앱을 봐야 한다.
+
+자주 나오는 것:
+
+| 증상 | 원인 |
+|---|---|
+| `tunnel` 컨테이너가 아예 없다 | `--profile tunnel` 을 빠뜨렸거나, 앱이 healthy 가 아니다 |
+| 터널은 붙었는데 502·1033 | Public Hostname 의 Service 가 `localhost:8000` 이다 — `app:8000` 이어야 한다 |
+| `Provided Tunnel token is not valid` | 토큰이 잘렸거나 대시보드에서 터널을 지웠다 |
+| `.env` 를 채웠는데 안 읽힌다 | 파일 이름이 `.env.txt` 다 (윈도우가 확장자를 숨긴다) |
+
 ### 알아 둘 것
 
 - 로그: `docker compose logs -f app` · 터널은 `docker compose logs -f tunnel`
