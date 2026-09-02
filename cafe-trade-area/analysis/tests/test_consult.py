@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -158,6 +159,56 @@ class TestFilter(unittest.TestCase):
         md = CS.render(좁은, settings(), [], 통과, 제외)
         self.assertIn("남은 후보지가 없습니다", md)
         self.assertIn("판정 기준을 낮추면 안 됩니다", md)
+
+
+class TestLandingToolBlock(unittest.TestCase):
+    """소개 페이지의 「페이지 툴」 칸은 상담 화면이 무엇을 묻는지 적어 둔 자리다.
+
+    fields.js 에 상권 유형이 하나 늘거나 운영 형태 이름이 바뀌어도, 소개 페이지는
+    아무 소리 없이 옛 목록을 계속 보여 준다 — 그리고 영업팀은 그 화면을 보고
+    고객에게 말한다. 화면과 소개가 갈리는 것을 여기서 막는다.
+
+    칩 묶음의 **순서**까지 본다. 순서를 대응으로 쓰기 때문에, 묶음이 하나 더 붙거나
+    자리가 바뀌면 이 검사가 엉뚱한 목록끼리 견주게 된다 — 그 전에 멈춘다."""
+
+    소개 = ROOT.parent / "index.html"
+
+    @classmethod
+    def setUpClass(cls):
+        if not shutil.which("node"):
+            raise unittest.SkipTest("node 가 없어 소개 페이지 대조를 건너뜁니다")
+        p = subprocess.run(["node", str(DUMP)], capture_output=True, text=True, timeout=60)
+        if p.returncode != 0:
+            raise AssertionError(f"consult_dump.js 실패:\n{p.stderr}")
+        cls.js = json.loads(p.stdout)
+        글 = cls.소개.read_text(encoding="utf-8")
+        # class="tool rv d1" — 뒤에 등장 애니메이션 클래스가 붙는다.
+        블록 = re.search(r'<article class="tool[^"]*".*?</article>', 글, re.S)
+        if not 블록:
+            raise AssertionError("소개 페이지에 페이지 툴 칸(article.tool)이 없습니다")
+        cls.툴 = 블록.group(0)
+        cls.칩묶음 = [re.findall(r"<span>([^<]+)</span>", 안)
+                    for 안 in re.findall(r'<span class="opts">((?:\s*<span>[^<]*</span>)+)\s*</span>',
+                                       cls.툴, re.S)]
+
+    def test_칩_묶음이_셋이다(self):
+        self.assertEqual(len(self.칩묶음), 3,
+                         f"고르는 값 묶음이 셋이 아닙니다: {self.칩묶음}")
+
+    def test_상권유형이_상담화면과_같다(self):
+        self.assertEqual(self.칩묶음[0], self.js["상권유형"])
+
+    def test_투자금형태가_상담화면과_같다(self):
+        self.assertEqual(self.칩묶음[1], list(self.js["투자금형태"]))
+
+    def test_운영형태가_상담화면과_같다(self):
+        self.assertEqual(self.칩묶음[2], list(self.js["운영형태"]))
+
+    def test_받는_개인정보를_빠짐없이_적었다(self):
+        """무엇을 받는지 적어 두지 않은 항목이 화면에는 있는 상태가 제일 나쁘다 —
+        고객에게 동의를 구할 때 근거로 쓸 화면이 소개와 다르다."""
+        for k in self.js["개인정보키"]:
+            self.assertIn(k, self.툴, f"{k} 를 소개 페이지가 적지 않습니다")
 
 
 class TestWebCliParity(unittest.TestCase):
