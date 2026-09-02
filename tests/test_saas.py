@@ -585,6 +585,47 @@ class TestPages(unittest.TestCase):
         self.assertIn('http-equiv="refresh"', body)
 
 
+class TestKoreanTypesetting(unittest.TestCase):
+    """한글은 낱자 사이 어디서나 끊긴다 — 브라우저 기본값이 그렇다.
+
+    그대로 두면 '넣어 보십시오' 가 '넣 / 어 보십시오' 로, '전송되지 않습니다' 가
+    '전 / 송되지' 로 갈라진다. 오류가 아니라서 아무도 알려 주지 않고, 화면을 직접
+    보지 않으면 발견되지도 않는다. 실제로 공개 페이지 전체가 그 상태였다.
+
+    word-break:keep-all 은 한 줄이면 되는 대신 한 줄이라서 쉽게 사라진다.
+    화면을 쓰는 모든 스타일시트에서 지킨다."""
+
+    # 화면이 늘면 여기에 더한다. 새 화면이 이 목록에 없으면 검사도 되지 않는다.
+    화면들 = (
+        "cafe-trade-area/index.html",              # 소개
+        "cafe-trade-area/shared/base.css",         # 상담 · 데이터 입력
+        "cafe-trade-area/app/styles.css",          # 심의 콘솔
+        "server/ui.py",                            # SaaS
+        ".github/pages/심의콘솔-안내.html",         # 콘솔 안내
+    )
+
+    def test_모든_화면이_한글_줄바꿈_규칙을_켠다(self):
+        for 파일 in self.화면들:
+            글 = (ROOT / 파일).read_text(encoding="utf-8")
+            몸통 = re.findall(r"body\s*\{([^}]*)\}", 글)
+            self.assertTrue(몸통, f"{파일} 에 body 규칙이 없습니다")
+            self.assertTrue(any("keep-all" in b for b in 몸통),
+                            f"{파일} 의 body 에 word-break:keep-all 이 없습니다 — "
+                            f"한글이 낱자 사이에서 끊깁니다")
+            self.assertTrue(any("overflow-wrap" in b for b in 몸통),
+                            f"{파일} 에 overflow-wrap 이 없습니다 — keep-all 만 켜면 "
+                            f"store-scout.com 같은 긴 라틴 토막이 칸을 넘칩니다")
+
+    def test_한글_폭은_ch_가_아니라_em_으로_잡는다(self):
+        """ch 는 '0' 자 너비다. 한글 한 자는 그보다 두 배 가까이 넓어서, 60ch 로
+        적어 두면 실제로는 35자 남짓에서 줄이 바뀐다 — 적어 둔 값과 화면이 다르다.
+        한글에서는 1em 이 대략 한 자이므로 em 으로 적으면 읽는 대로 나온다."""
+        for 파일 in ("cafe-trade-area/index.html", "cafe-trade-area/shared/base.css"):
+            글 = (ROOT / 파일).read_text(encoding="utf-8")
+            self.assertEqual(re.findall(r"max-width:\s*\d+(?:\.\d+)?ch", 글), [],
+                             f"{파일} 이 아직 ch 로 폭을 잡습니다")
+
+
 class TestConsultPrivacy(unittest.TestCase):
     """상담은 이 제품에서 개인정보가 들어오는 유일한 자리다.
 

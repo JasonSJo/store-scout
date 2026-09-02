@@ -48,6 +48,9 @@ body{
   font:400 15px/1.65 'IBM Plex Sans KR','Pretendard',-apple-system,'Apple SD Gothic Neo',
        'Malgun Gothic',sans-serif;
   letter-spacing:-.01em;-webkit-font-smoothing:antialiased;
+  /* 한글은 낱자 사이 어디서나 끊긴다 — keep-all 로 띄어쓰기에서만 끊고,
+     break-word 로 긴 라틴 토막이 칸을 넘치지 않게 막는다. */
+  word-break:keep-all;overflow-wrap:break-word;
   /* 종이 그레인 — 평면 색이 인쇄물처럼 앉는다. 공개 페이지와 같은 것. */
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)' opacity='.16'/%3E%3C/svg%3E");
 }

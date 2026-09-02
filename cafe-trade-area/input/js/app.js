@@ -437,7 +437,7 @@
           <small id="q-margin-help">매출에서 변동비를 뺀 비율. 55 또는 0.55 둘 다 됩니다. 변동비율 v = 1 − 마진율</small></div>
         <div class="fld"><div class="f-h"><label class="lb" for="q-rent">월임대료 (만원)</label><em>선택</em></div>
           <input type="number" id="q-rent" name="월임대료" value="${esc(임대료)}" min="0" step="1"
-            placeholder="예: 300… (모르면 비워 두세요)" inputmode="decimal" autocomplete="off"
+            placeholder="예: 300…" inputmode="decimal" autocomplete="off"
             aria-describedby="q-rent-help"/>
           <small id="q-rent-help">알면 손익분기 매출이 한 줄로 나옵니다. 모르면 아래 구간표로 대신합니다.</small></div>
       </div>

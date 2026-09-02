@@ -22,6 +22,10 @@
 html{scroll-behavior:smooth}
 body{
   margin:0;background:var(--bg);color:var(--fg);line-height:1.65;letter-spacing:-.01em;
+  /* 한글은 낱자 사이 어디서나 끊긴다 — 브라우저 기본값이 그렇다. 그대로 두면
+     '전송되지 않습니다' 가 '전 / 송되지' 로 갈라진다. keep-all 은 띄어쓰기에서만
+     끊게 하고, break-word 는 consult.json 같은 긴 라틴 토막이 칸을 넘치지 않게 막는다. */
+  word-break:keep-all;overflow-wrap:break-word;
   font-family:'IBM Plex Sans KR','Pretendard',-apple-system,'Malgun Gothic',sans-serif;
   -webkit-font-smoothing:antialiased;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='220' height='220'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.82' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='220' height='220' filter='url(%23n)' opacity='.16'/%3E%3C/svg%3E");
@@ -58,7 +62,7 @@ header.top{background:var(--bg);border-bottom:1px solid var(--border);position:s
 /* ── 안내 ─────────────────────────────── */
 .intro{padding:30px 0 22px}
 .intro h1{font-size:clamp(24px,3.4vw,32px);font-weight:700;line-height:1.25}
-.intro p{margin:10px 0 0;max-width:70ch;color:var(--soft);font-size:14.5px}
+.intro p{margin:10px 0 0;max-width:44em;color:var(--soft);font-size:14.5px}
 .steps{display:flex;gap:0;flex-wrap:wrap;margin-top:20px;border:1px solid var(--border);background:var(--card)}
 .step{flex:1 1 210px;padding:14px 18px;border-left:1px solid var(--border)}
 .step:first-child{border-left:0}
@@ -85,6 +89,12 @@ input,select,textarea{
   border:1px solid var(--border);border-radius:2px;padding:8px 10px;width:100%;
 }
 input[type=number]{font-family:'IBM Plex Mono',ui-monospace,monospace;font-variant-numeric:tabular-nums;text-align:right}
+/* 값의 길이에 맞춘 폭. 두 칸 그리드에서 width:100% 만 두면 이름과 전화번호가
+   500px 짜리 칸을 받는다 — 화면이 비어 보이고, 무엇을 넣는 칸인지도 흐려진다.
+   주소·검색처럼 실제로 긴 값은 아래에서 다시 풀어 준다. */
+.f input[type=text],.fld input[type=text]{max-width:26em}
+.f input[type=tel],.fld input[type=tel]{max-width:15em}
+.f input[type=number],.fld input[type=number]{max-width:13em}
 input:focus,select:focus,textarea:focus{outline:2px solid var(--sig-soft);border-color:var(--sig)}
 input.bad,select.bad{border-color:var(--no);background:#fbf0ee}
 textarea{resize:vertical;min-height:56px}
@@ -125,10 +135,14 @@ legend{
   padding:0;font-family:'IBM Plex Mono',monospace;font-size:10px;letter-spacing:.2em;
   text-transform:uppercase;color:var(--sig);font-weight:500;
 }
-fieldset .note{margin:7px 0 16px;font-size:12.5px;color:var(--mute);max-width:76ch}
+fieldset .note{margin:7px 0 16px;font-size:12.5px;color:var(--mute);max-width:46em}
 .grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px 20px}
 @media(max-width:620px){.grid{grid-template-columns:1fr}}
-.f{display:flex;flex-direction:column;gap:5px}
+/* .fld(상담)와 .f(입력)는 같은 모양의 한 칸이다. 세로 흐름을 명시해 둔다 —
+   전에는 .fld 가 그냥 블록이라 입력칸이 width:100% 로 줄을 다 먹은 덕분에
+   설명글이 아래로 밀려나 있었다. 입력칸 폭을 값에 맞춰 줄이자 설명글이 옆으로
+   붙어 버렸다. 배치가 폭에 의존하고 있었던 것이다. */
+.f,.fld{display:flex;flex-direction:column;gap:5px}
 .f.wide{grid-column:1/-1}
 .f-h{display:flex;align-items:baseline;gap:7px;flex-wrap:wrap}
 .f label,.fld .lb{font-size:12.5px;font-weight:500;color:var(--soft)}
@@ -175,7 +189,7 @@ footer{border-top:1px solid var(--border);padding:26px 0 46px;color:var(--mute);
 /* ── 위치 블록 ─────────────────────────────── */
 fieldset.place .note{margin-bottom:12px}
 .searchrow{display:flex;gap:7px;flex-wrap:wrap}
-.searchrow input{flex:1 1 240px}
+.searchrow input{flex:1 1 240px;max-width:none}
 .searchrow button{flex:0 0 auto}
 
 .hits{margin-top:9px;border:1px solid var(--border);background:var(--bg);max-height:290px;overflow:auto}
@@ -242,7 +256,7 @@ fieldset.place .note{margin-bottom:12px}
 .quicknote{
   margin:16px 0 0;padding:12px 14px;border:1px solid var(--border);
   border-left:3px solid var(--sig);background:var(--card);
-  font-size:13px;color:var(--soft);max-width:82ch;
+  font-size:13px;color:var(--soft);max-width:48em;
 }
 .modes{display:flex;gap:8px;padding:14px 20px 0}
 .modes .mode{
