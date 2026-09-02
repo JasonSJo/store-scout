@@ -585,6 +585,98 @@ class TestPages(unittest.TestCase):
         self.assertIn('http-equiv="refresh"', body)
 
 
+class TestJsonApi(unittest.TestCase):
+    """콘솔 화면을 React 로 옮기려면 데이터가 JSON 으로 나와야 한다.
+
+    화면이 바뀌어도 **경계는 그대로여야 한다.** HTML 라우트에서 지키던 셋을
+    API 에서도 똑같이 지키는지 여기서 본다 — org 격리, 등급 표기, 개인정보.
+    규칙을 두 벌로 적으면 한쪽만 고치고 안심하게 되므로, api.py 는 app.py 와
+    같은 db.rows_for_org 를 쓴다. 이 테스트는 그것이 실제로 통하는지 확인한다."""
+
+    def setUp(self):
+        self.ids = seed()
+
+    def api(self, email: str) -> TestClient:
+        c = TestClient(app_mod.app)
+        r = c.post("/api/login", data={"email": email, "password": "pw-1234"})
+        self.assertEqual(r.status_code, 200, r.text)
+        return c
+
+    def test_로그인_없이는_401이다(self):
+        c = TestClient(app_mod.app)
+        for 길 in ("/api/session", "/api/dashboard", "/api/runs"):
+            self.assertEqual(c.get(길).status_code, 401, 길)
+
+    def test_틀린_비밀번호가_계정_존재를_알려주지_않는다(self):
+        """'그런 계정 없음' 과 '비밀번호 틀림' 을 갈라 답하면 계정 목록이 새어 나간다."""
+        c = TestClient(app_mod.app)
+        없는계정 = c.post("/api/login", data={"email": "없는@a.kr", "password": "pw-1234"})
+        틀린암호 = c.post("/api/login", data={"email": "영업@a.kr", "password": "틀림"})
+        self.assertEqual(없는계정.status_code, 401)
+        self.assertEqual(틀린암호.status_code, 401)
+        self.assertEqual(없는계정.json()["detail"], 틀린암호.json()["detail"])
+
+    def test_세션이_비밀번호_해시를_내보내지_않는다(self):
+        본문 = self.api("영업@a.kr").get("/api/session").text
+        for 금지 in ("pw_hash", "pbkdf2", "$"):
+            self.assertNotIn(금지, 본문, f"세션 응답에 {금지} 가 있습니다")
+
+    def test_등급이_모든_자료에_붙는다(self):
+        c = self.api("영업@a.kr")
+        for 길 in ("/api/session", "/api/dashboard", "/api/runs"):
+            self.assertEqual(c.get(길).json().get("등급"), "사내 한정 · 대외 배포 금지", 길)
+
+    def test_남의_org_심의는_404다(self):
+        """403 으로 답하면 '그 id 가 존재한다' 는 사실이 새어 나간다."""
+        result = {"후보지": [{"이름": "가", "S": 61.2,
+                           "판정": {"판정": "보류", "사유": ["시세 대비 임대료 높음"]},
+                           "매출": {"월매출_하한": 2600, "월매출_상한": 3400},
+                           "입력": {}, "경고": []}]}
+        with db.tx() as con:
+            b = con.execute("INSERT INTO batches (org_id,name,created_by,sites_csv,site_count)"
+                            " VALUES (?,?,?,?,?)",
+                            (self.ids["A"]["org"], "묶음", self.ids["A"]["운영"], "x", 1)).lastrowid
+            run = con.execute("INSERT INTO runs (org_id,batch_id,status,mode,result_json)"
+                              " VALUES (?,?,'완료','B',?)",
+                              (self.ids["A"]["org"], b,
+                               json.dumps(result, ensure_ascii=False))).lastrowid
+        나 = self.api("영업@a.kr").get(f"/api/runs/{run}")
+        남 = self.api("영업@b.kr").get(f"/api/runs/{run}")
+        self.assertEqual(나.status_code, 200)
+        self.assertEqual(나.json()["후보지"][0]["사유"], ["시세 대비 임대료 높음"])
+        self.assertEqual(남.status_code, 404, "남의 org 심의가 보입니다")
+
+    def test_심의_목록이_org_를_넘지_않는다(self):
+        with db.tx() as con:
+            for 조직 in ("A", "B"):
+                b = con.execute("INSERT INTO batches (org_id,name,created_by,sites_csv,site_count)"
+                                " VALUES (?,?,?,?,?)",
+                                (self.ids[조직]["org"], f"{조직}묶음",
+                                 self.ids[조직]["운영"], "x", 1)).lastrowid
+                con.execute("INSERT INTO runs (org_id,batch_id,status) VALUES (?,?,'완료')",
+                            (self.ids[조직]["org"], b))
+        묶음 = [r["묶음"] for r in self.api("영업@a.kr").get("/api/runs").json()["심의"]]
+        self.assertIn("A묶음", 묶음)
+        self.assertNotIn("B묶음", 묶음, "남의 org 묶음이 목록에 있습니다")
+
+    def test_상담_목록이_연락처를_주지_않는다(self):
+        """목록은 훑어보는 화면이다. 연락처는 전체 열람 때만 나가고 감사 로그에 남는다."""
+        with db.tx() as con:
+            con.execute("INSERT INTO consults (org_id,created_by,고객명,고객전화번호)"
+                        " VALUES (?,?,?,?)",
+                        (self.ids["A"]["org"], self.ids["A"]["운영"],
+                         "홍길동", "010-1234-5678"))
+        본문 = self.api("영업@a.kr").get("/api/runs").text
+        self.assertIn("홍길동", 본문)
+        self.assertNotIn("010-1234-5678", 본문, "목록 응답에 연락처가 있습니다")
+
+    def test_로그아웃하면_더_못_읽는다(self):
+        c = self.api("영업@a.kr")
+        self.assertEqual(c.get("/api/dashboard").status_code, 200)
+        c.post("/api/logout")
+        self.assertEqual(c.get("/api/dashboard").status_code, 401)
+
+
 class TestFrontendBackendSplit(unittest.TestCase):
     """프론트엔드(web/)와 백엔드(analysis/ · server/)의 경계.
 

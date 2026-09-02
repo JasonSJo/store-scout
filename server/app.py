@@ -19,12 +19,16 @@ from fastapi import (BackgroundTasks, Depends, FastAPI, File, Form, HTTPExceptio
                      Request, UploadFile)
 from fastapi.responses import HTMLResponse, PlainTextResponse, RedirectResponse, Response
 
-from . import auth, consults, db, jobs, orgdata, plans, views
+from . import api, auth, consults, db, jobs, orgdata, plans, views
 
 COOKIE = "scout_session"
 등급 = "사내 한정 · 대외 배포 금지"
 
 app = FastAPI(title="스스닷컴", docs_url=None, redoc_url=None)
+
+# 콘솔 화면을 React 로 옮기는 중이다. JSON API 는 /api 아래에 있고, HTML 을 찍는
+# 아래 라우트들은 React 가 각 화면을 따라잡을 때까지 그대로 돈다.
+app.include_router(api.router)
 
 
 @app.on_event("startup")
