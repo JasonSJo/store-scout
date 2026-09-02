@@ -190,11 +190,38 @@ python3 -m server.bootstrap --org "조직명" --email you@brand.co.kr
 공유기·방화벽을 건드리지 않는다. 무료이고, 고객 개인정보는 이 서버에만 남는다 —
 Cloudflare 는 TLS 를 끝내고 지나보낼 뿐 저장하지 않는다.
 
-### 1. 터널 만들기
+### 1. 터널 만들기 — `CLOUDFLARE_TUNNEL_TOKEN` 을 어디서 받는가
 
-Cloudflare 대시보드 → **Zero Trust → Networks → Tunnels → Create a tunnel**
-→ Cloudflared 선택 → 이름을 짓고 **토큰을 복사**한다.
-(도메인이 Cloudflare 에 등록돼 있어야 한다. 없으면 도메인을 하나 옮겨 두십시오.)
+**먼저 도메인.** 터널은 *가진 도메인에 주소를 붙이는* 물건이라, 도메인이
+Cloudflare 계정에 들어와 있어야 한다. `dash.cloudflare.com` 왼쪽 **Websites**
+목록에 도메인이 보이면 준비된 것이다. 안 보이면 둘 중 하나를 먼저 한다.
+
+- **도메인이 없다** → Cloudflare 에서 바로 산다. 대시보드 → **Domain
+  Registration → Register Domains**. `.com` 은 원가로 판다(연 2만원 안팎).
+  어차피 `store-scout.com` 이 필요하니 여기서 사면 이 단계가 같이 끝난다.
+  등록 즉시 쓸 수 있다.
+- **도메인이 다른 등록기관에 있다** → 대시보드 → **Add a site** → 도메인 입력
+  → **Free** 플랜 → Cloudflare 가 알려주는 네임서버 두 개를 등록기관
+  (가비아·후이즈·카페24 등) 관리 화면에서 바꿔 넣는다. 반영에 보통 몇십 분,
+  길면 하루가 걸린다. **Active** 로 바뀌어야 다음으로 간다.
+
+**토큰 받기.** `dash.cloudflare.com` → 왼쪽 **Zero Trust** → **Networks →
+Tunnels** → **Create a tunnel** → **Cloudflared** 선택 → 이름을 짓고(예:
+`store-scout`) **Save**.
+
+다음 화면 「Install and run a connector」 에 OS 별 설치 명령이 뜬다. 어느 탭이든
+좋다 — **명령을 실행하지는 않는다.** 명령 안에 있는 긴 문자열 하나만 쓴다.
+
+    cloudflared service install eyJhIjoiZjM4…（아주 긴 문자열）…In0=
+                                └──────── 이 부분만이 토큰이다 ────────┘
+
+- 토큰은 항상 **`eyJ` 로 시작**하고 보통 **180~220자**다.
+- `cloudflared`, `service install`, `--token` 같은 앞부분은 **빼고** 복사한다.
+  (여기서 제일 많이 틀린다. `scripts/tunnel_check.py` 가 잡아 준다.)
+- 터널 목록의 **Configure** 로 들어가면 이 화면을 언제든 다시 볼 수 있다.
+  잃어버렸으면 다시 보면 되고, 유출됐으면 같은 자리에서 **Refresh token**.
+- 토큰은 **자격증명**이다. 이 값 하나면 누구나 사내 서버 이름으로 터널을 붙일
+  수 있다. 채팅·이슈·커밋에 붙여넣지 않는다. `.env` 는 이미 gitignore 에 있다.
 
 이어서 **Public Hostname** 을 하나 추가한다:
 
