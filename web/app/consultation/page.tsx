@@ -1,0 +1,96 @@
+'use client';
+
+import Link from '@/lib/link';
+import { useState, useEffect, useRef, type FormEvent } from 'react';
+import { flushSync } from 'react-dom';
+import { ArrowLeft, ArrowRight, UserRound, MapPin, Wallet, Store, Search, Check, ShieldCheck, ClipboardCheck, Download, Info, Building2, BriefcaseBusiness, GraduationCap, Hospital, Landmark, Layers3, ChevronRight } from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { Dialog, DialogContent, DialogTitle, DialogDescription } from '@/components/ui/dialog';
+import { REGIONS } from '@/lib/regions';
+
+type Address = { zip: string; main: string; detail: string };
+type Area = { city: string; district: string };
+type Consultation = { name: string; phone: string; home: Address; work: Address; areas: Area[]; size: string; market: string; deposit: string; premium: string; funding: string; operation: string };
+type PostcodeData = { zonecode: string; roadAddress: string; jibunAddress: string };
+declare global { interface Window { kakao?: { Postcode: new (options: { oncomplete: (data: PostcodeData) => void; width: string; height: string }) => { embed: (element: HTMLElement) => void } } } }
+const initial: Consultation = { name: '', phone: '', home: {zip:'',main:'',detail:''}, work:{zip:'',main:'',detail:''}, areas:[{city:'',district:''},{city:'',district:''},{city:'',district:''}], size:'', market:'', deposit:'', premium:'', funding:'', operation:'' };
+const markets = [{name:'오피스',icon:BriefcaseBusiness},{name:'주거',icon:Building2},{name:'학교',icon:GraduationCap},{name:'병원',icon:Hospital},{name:'메인',icon:Landmark},{name:'복합',icon:Layers3}];
+const money = (value: string) => value === '' ? '미입력' : Number(value).toLocaleString('ko-KR') + '만 원';
+
+export default function ConsultationPage() {
+  const [form,setForm] = useState<Consultation>(initial);
+  const [addressTarget,setAddressTarget] = useState<'home'|'work'|null>(null);
+  const [addressError,setAddressError] = useState('');
+  const [complete,setComplete] = useState(false);
+  const [error,setError] = useState('');
+  const postcodeRef = useRef<HTMLDivElement>(null);
+  const formRef = useRef(form); formRef.current = form;
+  const update = (key: keyof Consultation, value: unknown) => { setForm(prev=>({...prev,[key]:value})); setError(''); };
+  const setAddress = (target: 'home'|'work', part: keyof Address, value: string) => setForm(prev=>({...prev,[target]:{...prev[target],[part]:value}}));
+  const filled = [Boolean(form.name.trim()&&form.phone.trim()&&form.home.main&&form.work.main),Boolean(form.areas[0].district&&form.size&&form.market),Boolean(form.deposit!==''&&form.premium!==''&&form.funding),Boolean(form.operation)];
+  const progress = filled.filter(Boolean).length;
+  const total = Number(form.deposit||0)+Number(form.premium||0);
+
+  useEffect(()=>{
+    const script = document.createElement('script'); script.src='https://t1.kakaocdn.net/mapjsapi/bundle/postcode/prod/postcode.v2.js'; script.async=true;
+    script.onerror=()=>setAddressError('주소 검색 서비스를 불러오지 못했습니다. 주소를 직접 입력하거나 잠시 후 다시 시도해 주세요.');
+    document.head.appendChild(script);
+    return ()=>{script.remove();};
+  },[]);
+  useEffect(()=>{
+    if(!addressTarget) return;
+    let active=true;
+    let attempts=0;
+    const timer=window.setInterval(()=>{
+      attempts++;
+      if(window.kakao?.Postcode&&postcodeRef.current){
+        window.clearInterval(timer); setAddressError('');
+        new window.kakao.Postcode({width:'100%',height:'100%',oncomplete(data){
+          if(!active)return;
+          setForm(prev=>({...prev,[addressTarget]:{...prev[addressTarget],zip:data.zonecode,main:data.roadAddress||data.jibunAddress}}));
+          setAddressTarget(null);
+        }}).embed(postcodeRef.current);
+      } else if(attempts>50){window.clearInterval(timer);setAddressError('주소 검색을 연결할 수 없습니다. 창을 닫고 주소를 직접 입력해 주세요.');}
+    },150);
+    return ()=>{active=false;window.clearInterval(timer);};
+  },[addressTarget]);
+
+  useEffect(()=>{
+    type Tool = {name:string;title:string;description:string;inputSchema:object;annotations:object;execute:(input:unknown)=>unknown};
+    const context=(document as Document & {modelContext?:{registerTool:(tool:Tool,options:{signal:AbortSignal})=>void|Promise<void>}}).modelContext;
+    if(!context?.registerTool)return;
+    const lifecycle=new AbortController();
+    const register=(tool:Tool)=>{try{void Promise.resolve(context.registerTool(tool,{signal:lifecycle.signal})).catch(()=>{});}catch{}};
+    register({name:'get_consultation_preferences',title:'상담 조건 확인',description:'현재 입력된 창업 조건을 읽습니다. 고객 이름, 전화번호, 주소는 반환하지 않습니다.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:true},execute:()=>{const f=formRef.current;return {areas:f.areas,size:f.size,market:f.market,deposit:f.deposit,premium:f.premium,funding:f.funding,operation:f.operation};}});
+    register({name:'stage_consultation_preferences',title:'창업 조건 입력',description:'상담 폼의 창업 조건을 입력합니다. 저장하거나 제출하지 않으며 사용자가 확인할 수 있도록 화면에 반영합니다.',inputSchema:{type:'object',properties:{size:{type:'string'},market:{type:'string',enum:markets.map(m=>m.name)},funding:{type:'string',enum:['현금','현금+대출','현금+대출+리스']},operation:{type:'string',enum:['오토','점주+알바','점주']}},additionalProperties:false},annotations:{readOnlyHint:false},execute:(input)=>{
+      if(!input||typeof input!=='object'||Array.isArray(input))throw new Error('입력은 객체여야 합니다.');
+      const patch=input as Record<string,unknown>;
+      const allowed:Record<string,string[]>={market:markets.map(m=>m.name),funding:['현금','현금+대출','현금+대출+리스'],operation:['오토','점주+알바','점주']};
+      for(const [key,value] of Object.entries(patch)){if(typeof value!=='string'||!(key==='size'||key in allowed)||(key==='size'?(!/^\d+(\.\d+)?$/.test(value)||Number(value)<=0||Number(value)>100000):!allowed[key].includes(value)))throw new Error('올바르지 않은 창업 조건입니다.');}
+      flushSync(()=>setForm(prev=>({...prev,...patch})));return {status:'staged',fields:Object.keys(patch)};
+    }});
+    return ()=>lifecycle.abort();
+  },[]);
+
+  function submit(event:FormEvent){event.preventDefault();if(!/^0\d{8,10}$/.test(form.phone.replace(/\D/g,''))){setError('전화번호를 확인해 주세요. 숫자 9~11자리로 입력해 주세요.');document.getElementById('phone')?.focus();return;}if(!form.market||!form.funding||!form.operation){setError('희망 상권, 투자금 형태, 운영 형태를 모두 선택해 주세요.');return;}const areas=form.areas.filter(a=>a.city||a.district);if(areas.some(a=>!a.city||!a.district)){setError('선택한 희망 지역의 시·군·구를 끝까지 선택해 주세요.');return;}if(new Set(areas.map(a=>a.city+a.district)).size!==areas.length){setError('희망 지역은 순위별로 서로 다른 지역을 선택해 주세요.');return;}setComplete(true);}
+  function download(){const blob=new Blob([JSON.stringify({서비스:'스스닷컴',작성시각:new Date().toISOString(),고객명:form.name,전화번호:form.phone,거주지:form.home,근무지:form.work,희망지역:form.areas.filter(a=>a.district),희망평수:form.size,희망상권:form.market,보증금만원:form.deposit,권리금만원:form.premium,투자금형태:form.funding,운영형태:form.operation},null,2)],{type:'application/json;charset=utf-8'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='스스닷컴_고객상담.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+  function renderAddressFields({target,title}:{target:'home'|'work';title:string}){return <div className="field address-field"><Label htmlFor={`${target}-address`}>{title}<span className="required">*</span></Label><div className="address-row"><Input aria-label={`${title} 우편번호`} placeholder="우편번호" value={form[target].zip} onChange={e=>setAddress(target,'zip',e.target.value)} maxLength={5} inputMode="numeric"/><Button type="button" variant="outline" onClick={()=>setAddressTarget(target)}><Search size={15}/> 주소 검색</Button></div><Input id={`${target}-address`} placeholder="도로명 또는 지번 주소" value={form[target].main} onChange={e=>setAddress(target,'main',e.target.value)} required/><Input aria-label={`${title} 상세주소`} placeholder="상세주소 (선택)" value={form[target].detail} onChange={e=>setAddress(target,'detail',e.target.value)}/></div>;}
+  return <div className="tool-page">
+    <header className="tool-header"><Link href="/" className="brand"><span className="brand-mark"><span className="brand-monogram" aria-hidden="true">스스</span></span><strong>스스닷컴<span>store scout</span></strong></Link><span className="tool-name">상권분석 워크스페이스</span><Link href="/" className="back-home"><ArrowLeft size={15}/> 메인으로</Link></header>
+    <div className="tool-layout"><aside className="tool-sidebar"><span className="eyebrow">NEW CONSULTATION</span><h2>좋은 출점의<br/>첫 번째 단계.</h2><p>고객의 조건을 정리하면<br/>상권의 방향이 보입니다.</p><nav className="form-steps">{[['basic','고객 기본 정보',UserRound],['location','창업 희망 조건',MapPin],['budget','투자 계획',Wallet],['operation','운영 계획',Store]].map(([id,title,Icon],i)=>{const StepIcon=Icon as typeof UserRound;return <a key={String(id)} href={`#${id}`} className={filled[i]?'done':''}><span className="step-icon">{filled[i]?<Check size={15}/>:<StepIcon size={16}/>}</span><span>{String(title)}</span><small>0{i+1}</small></a>;})}</nav><div className="sidebar-tip"><ShieldCheck size={20}/><h3>상담 정보는 안전하게</h3><p>입력 내용은 현재 화면에만 유지되며 서버로 전송되지 않습니다. 완료 후 상담 파일로 내려받을 수 있습니다.</p></div><span className="sidebar-domain">store-scout.com</span></aside>
+    <main className="consultation-main"><div className="breadcrumb"><Link href="/">홈</Link><ChevronRight size={12}/><span>상권분석</span><ChevronRight size={12}/><b>고객 상담</b></div><div className="form-heading"><div><span className="eyebrow">STEP 01 · CLIENT CONSULTATION</span><h1>고객 상담</h1><p>고객에게 맞는 상권을 찾기 위해 창업 조건을 입력해 주세요.</p></div><span className="required-guide"><i/> 필수 입력 항목</span></div>
+    <form onSubmit={submit}>
+      <section className="form-section" id="basic"><div className="form-section-title"><span>01</span><h2>고객 기본 정보</h2><small>상담 고객의 기본 정보를 입력해 주세요.</small></div><div className="field-grid"><div className="field"><Label htmlFor="customer-name">고객명 <span className="required">*</span></Label><Input id="customer-name" autoComplete="name" placeholder="고객 이름을 입력해 주세요" value={form.name} onChange={e=>update('name',e.target.value)} required maxLength={60}/></div><div className="field"><Label htmlFor="phone">고객 전화번호 <span className="required">*</span></Label><Input id="phone" type="tel" autoComplete="tel" placeholder="010-0000-0000" value={form.phone} onChange={e=>update('phone',e.target.value)} required maxLength={14}/></div>{renderAddressFields({target:"home",title:"거주지"})}{renderAddressFields({target:"work",title:"근무지"})}</div><p className="field-help"><Info size={13}/> 주소 검색 후 우편번호와 기본 주소가 자동으로 입력됩니다. 상세주소는 선택 사항입니다.</p></section>
+      <section className="form-section" id="location"><div className="form-section-title"><span>02</span><h2>창업 희망 조건</h2><small>어떤 지역과 상권을 찾고 계신가요?</small></div><Label className="group-label">창업 희망 지역 <span className="required">*</span><small>1순위 필수 · 2, 3순위 선택</small></Label><div className="regions-list">{form.areas.map((area,i)=><div className="region-row" key={i}><span className={`rank rank-${i}`}>{i+1}<small>순위</small></span><NativeSelect aria-label={`${i+1}순위 시·도`} value={area.city} required={i===0} onChange={e=>{const next=[...form.areas];next[i]={city:e.target.value,district:''};update('areas',next);}}><option value="">시·도 선택</option>{Object.keys(REGIONS).map(city=><option key={city}>{city}</option>)}</NativeSelect><NativeSelect aria-label={`${i+1}순위 시·군·구`} value={area.district} disabled={!area.city} required={i===0||Boolean(area.city)} onChange={e=>{const next=[...form.areas];next[i]={...area,district:e.target.value};update('areas',next);}}><option value="">시·군·구 선택</option>{(REGIONS[area.city]||[]).map(d=><option key={d}>{d}</option>)}</NativeSelect></div>)}</div><div className="field size-field"><Label htmlFor="size">희망 평수 <span className="required">*</span></Label><div className="unit-input"><Input id="size" type="number" min="1" max="100000" step="0.1" placeholder="예: 30" value={form.size} onChange={e=>update('size',e.target.value)} required/><span>평</span></div><small>{form.size?`약 ${(Number(form.size)*3.3058).toLocaleString('ko-KR',{maximumFractionDigits:1})}㎡`:'전용면적 기준으로 입력해 주세요.'}</small></div><fieldset><legend>희망 상권 <span className="required">*</span></legend><RadioGroup className="market-options" value={form.market} onValueChange={v=>update('market',v)} aria-label="희망 상권">{markets.map(({name,icon:Icon})=><Label className={`market-option ${form.market===name?'selected':''}`} key={name}><Icon size={21}/><span>{name}</span><RadioGroupItem value={name} aria-label={name}/></Label>)}</RadioGroup></fieldset></section>
+      <section className="form-section" id="budget"><div className="form-section-title"><span>03</span><h2>투자 계획</h2><small>투자 가능한 범위를 확인합니다.</small></div><div className="field-grid"><div className="field"><Label htmlFor="deposit">보증금 <span className="required">*</span></Label><div className="unit-input"><Input id="deposit" type="number" min="0" max="100000000" step="1" placeholder="예: 5,000" value={form.deposit} onChange={e=>update('deposit',e.target.value)} required/><span>만 원</span></div></div><div className="field"><Label htmlFor="premium">권리금 <span className="required">*</span></Label><div className="unit-input"><Input id="premium" type="number" min="0" max="100000000" step="1" placeholder="권리금이 없으면 0" value={form.premium} onChange={e=>update('premium',e.target.value)} required/><span>만 원</span></div></div></div><div className="total-investment"><span>보증금 + 권리금</span><strong>{total.toLocaleString('ko-KR')}<small>만 원</small></strong></div><fieldset><legend>투자금 형태 <span className="required">*</span></legend><RadioGroup className="choice-options" value={form.funding} onValueChange={v=>update('funding',v)} aria-label="투자금 형태">{['현금','현금+대출','현금+대출+리스'].map(name=><Label className={`choice-option ${form.funding===name?'selected':''}`} key={name}><RadioGroupItem value={name}/><span>{name.replaceAll('+',' + ')}</span></Label>)}</RadioGroup></fieldset></section>
+      <section className="form-section" id="operation"><div className="form-section-title"><span>04</span><h2>운영 계획</h2><small>예상하시는 매장 운영 방식을 선택해 주세요.</small></div><fieldset><legend className="sr-only">운영 형태</legend><RadioGroup className="choice-options operation-options" value={form.operation} onValueChange={v=>update('operation',v)} aria-label="운영 형태">{[{name:'오토',desc:'직원 중심의 매장 운영'},{name:'점주+알바',desc:'점주와 직원이 함께 운영'},{name:'점주',desc:'점주가 직접 운영'}].map(({name,desc})=><Label className={`choice-option ${form.operation===name?'selected':''}`} key={name}><RadioGroupItem value={name}/><span>{name.replaceAll('+',' + ')}<small>{desc}</small></span></Label>)}</RadioGroup></fieldset></section>
+      {error&&<p className="form-error" role="alert">{error}</p>}<div className="form-actions"><p><ShieldCheck size={15}/> 입력 내용은 서버에 저장되지 않습니다.</p><Button type="submit" className="submit-button">상담 내용 확인 <ArrowRight size={17}/></Button></div>
+    </form></main><aside className="summary-sidebar"><div className="summary-card"><span className="eyebrow">CONSULTATION SUMMARY</span><h3>상담 조건 한눈에</h3><div className="completion-count"><span>입력 완료</span><b>{progress}<small> / 4</small></b></div><div className="completion-bar"><span style={{width:`${progress*25}%`}}/></div><dl><dt>고객명</dt><dd>{form.name||'아직 입력하지 않았어요'}</dd><dt>1순위 희망 지역</dt><dd>{form.areas[0].district?`${form.areas[0].city} ${form.areas[0].district}`:'지역을 선택해 주세요'}</dd><dt>희망 면적 · 상권</dt><dd>{form.size?`${form.size}평`:'면적 미입력'}<span className="summary-dot">·</span>{form.market||'상권 미선택'}</dd><dt>투자금 합계</dt><dd className="summary-money">{total.toLocaleString('ko-KR')} <small>만 원</small></dd><dt>운영 형태</dt><dd>{form.operation||'운영 형태 미선택'}</dd></dl><div className="summary-bottom"><ClipboardCheck size={16}/> 모든 조건을 확인한 후<br/>상담 내용을 내려받으세요.</div></div><p className="data-disclaimer">유동인구·매물 분석은<br/>데이터 제공처 연결 후 이용 가능합니다.</p></aside></div>
+    <Dialog open={Boolean(addressTarget)} onOpenChange={open=>{if(!open)setAddressTarget(null);}}><DialogContent className="postcode-dialog"><DialogTitle>{addressTarget==='home'?'거주지':'근무지'} 주소 검색</DialogTitle><DialogDescription>도로명, 건물명 또는 지번으로 검색해 주세요.</DialogDescription>{addressError?<p className="form-error">{addressError}</p>:null}<div ref={postcodeRef} className="postcode-frame"/><p className="field-help">주소 검색 서비스: Kakao (Daum) 우편번호</p></DialogContent></Dialog>
+    <Dialog open={complete} onOpenChange={setComplete}><DialogContent className="complete-dialog"><div className="success-symbol"><Check size={26}/></div><DialogTitle>상담 내용이 정리되었습니다</DialogTitle><DialogDescription>입력한 내용을 확인하고 상담 파일을 내려받으세요.<br/>아직 서버에 저장되거나 상권분석이 실행된 것은 아닙니다.</DialogDescription><dl className="complete-summary"><dt>고객</dt><dd>{form.name} · {form.phone}</dd><dt>희망 지역</dt><dd>{form.areas.filter(a=>a.district).map((a,i)=><div key={i}>{i+1}순위 · {a.city} {a.district}</div>)}</dd><dt>희망 조건</dt><dd>{form.size}평 · {form.market} 상권</dd><dt>투자 계획</dt><dd>보증금 {money(form.deposit)} / 권리금 {money(form.premium)}<br/>{form.funding}</dd><dt>운영 형태</dt><dd>{form.operation}</dd></dl><Button className="download-button" onClick={download}><Download size={16}/> 상담 파일 내려받기</Button><Button variant="ghost" onClick={()=>setComplete(false)}>계속 수정하기</Button></DialogContent></Dialog>
+  </div>;
+}

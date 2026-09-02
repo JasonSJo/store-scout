@@ -27,7 +27,6 @@ from common import read_csv  # noqa: E402
 from config import FATAL_KEYS  # noqa: E402
 
 ROOT = Path(__file__).resolve().parent.parent
-DUMP = Path(__file__).resolve().parent / "quick_dump.js"
 
 BASE = {"주소": "서울 성동구 연무장길 42", "위도": 37.5445, "경도": 127.0557,
         "우편번호": "04782", "법정동코드": "1120010300", "후보지명": "",
@@ -94,58 +93,6 @@ class TestMarginMapping(unittest.TestCase):
         v, note = Q.variable_costs(0.98, dict(self.BASE_V))
         self.assertEqual(v["원재료율"], 0.0)
         self.assertIn("불가능", note)
-
-
-class TestWebCliParity(unittest.TestCase):
-    """웹의 자리표시자와 CLI 의 자리표시자가 갈리면 같은 주소가 화면과 파이프라인에서 다른 값을 갖는다."""
-
-    @classmethod
-    def setUpClass(cls):
-        if not shutil.which("node"):
-            raise unittest.SkipTest("node 가 없어 간편 입력 대조를 건너뜁니다")
-        p = subprocess.run(["node", str(DUMP)], capture_output=True, text=True, timeout=60)
-        if p.returncode != 0:
-            raise AssertionError(f"quick_dump.js 실패:\n{p.stderr}")
-        cls.js = json.loads(p.stdout)
-
-    def test_자리표시자가_같다(self):
-        self.assertEqual(set(self.js["가정"]), set(Q.ASSUMED),
-                         "quick.js 와 quick_site.py 의 가정 항목이 다릅니다")
-        for k, (v, why) in Q.ASSUMED.items():
-            with self.subTest(칸=k):
-                self.assertEqual(self.js["가정"][k]["값"], Q.fmt(v))
-                self.assertEqual(self.js["가정"][k]["근거"], why)
-
-    def test_치명_목록이_같다(self):
-        self.assertEqual(self.js["치명"], FATAL_KEYS)
-
-    def test_BEP_산술이_같다(self):
-        """화면의 손익분기 매출과 파이프라인의 BEP 가 갈리면 안 된다."""
-        폴백 = self.js["고정비폴백"]
-        for s in self.js["표본"]:
-            with self.subTest(마진율=s["마진율"], 임대료=s["임대료"]):
-                m = s["마진율"] / 100 if s["마진율"] > 1 else s["마진율"]
-                rent = s["임대료"]
-                F = (rent + rent * self.js["관리비율"]
-                     + 폴백["고정인건비_월_만원"] + 폴백["기타_월_만원"])
-                self.assertAlmostEqual(s["공헌이익률"], m, places=9)
-                self.assertAlmostEqual(s["F"], F, places=6)
-                self.assertAlmostEqual(s["월BEP"], F / m, places=6)
-                self.assertAlmostEqual(s["일BEP"], F / m / self.js["영업일수"], places=6)
-
-    def test_화면_BEP_가_M5_의_BEP_와_같은_식이다(self):
-        """M5 는 F/(1-v), 화면은 F/공헌이익률. 공헌이익률 = 1-v 이므로 같아야 한다."""
-        import m5_verdict as M5
-        for s in self.js["표본"]:
-            m = s["마진율"] / 100 if s["마진율"] > 1 else s["마진율"]
-            settings = {"운영": {"변동비": {"원재료율": round(1 - m, 9)},
-                                "고정비": {"고정인건비_월_만원": self.js["고정비폴백"]["고정인건비_월_만원"],
-                                        "기타_월_만원": self.js["고정비폴백"]["기타_월_만원"]}}}
-            site = {"월임대료_만원": s["임대료"],
-                    "관리비_만원": s["임대료"] * self.js["관리비율"]}
-            fc = M5.fixed_cost(site, settings)
-            v = M5.variable_rate(settings)
-            self.assertAlmostEqual(fc["F"] / (1 - v), s["월BEP"], places=6)
 
 
 class TestEndToEnd(unittest.TestCase):

@@ -53,7 +53,7 @@ header.top{position:sticky;top:0;z-index:20;background:var(--bg);border-bottom:1
 main{padding:24px 0 72px}
 .panel-head{display:flex;align-items:flex-start;gap:16px;flex-wrap:wrap;margin-bottom:18px}
 .panel-head h2{font-size:21px}
-.panel-head p{margin:4px 0 0;color:var(--fg-mute);font-size:13.5px;max-width:66ch}
+.panel-head p{margin:4px 0 0;color:var(--fg-mute);font-size:13.5px;max-width:36em}
 .panel-head .acts{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
 
 button,.btn{

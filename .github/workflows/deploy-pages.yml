@@ -1,27 +1,22 @@
 name: 스스닷컴 공개 페이지
 
 # store-scout.com 으로 나갈 공개 페이지를 GitHub Pages 로 배포한다.
-# 서비스 소개 · 후보지 데이터 입력 · 고객 상담 세 화면이다.
+# 프론트엔드는 web/ 하나뿐이다 — React + Vite 정적 빌드.
 #
-# 배포하지 않는 것
-#   analysis/     파이프라인 소스. 웹에서 쓸 것이 아니다.
-#   app/          심의 콘솔 — 사내 한정 · 대외 배포 금지.
-#   docs/         알고리즘 내부 설명. 백엔드 문서다.
-#   server/       SaaS. 이건 컨테이너로 따로 뜬다.
+# 배포하지 않는 것 (전부 백엔드다)
+#   cafe-trade-area/analysis/   파이프라인 · 계수 · 판정 로직
+#   cafe-trade-area/app/        심의 콘솔 — 사내 한정 · 대외 배포 금지
+#   cafe-trade-area/docs/       알고리즘 내부 설명
+#   server/                     SaaS. 컨테이너로 따로 뜬다
 #
 # 활성화: Settings → Pages → Source = "GitHub Actions"
-# 도메인: Settings → Pages → Custom domain 에 store-scout.com 을 넣으면
-#         Actions 가 CNAME 을 관리한다. DNS 를 먼저 걸어 두어야 한다.
+# 도메인: Custom domain 을 붙이는 날 아래 STORE_SCOUT_BASE 를 '/' 로 바꾼다.
 
 on:
   push:
     branches: [main]
     paths:
-      - "cafe-trade-area/index.html"
-      - "cafe-trade-area/input/**"
-      - "cafe-trade-area/consult/**"
-      - "cafe-trade-area/shared/**"
-      - ".github/pages/**"
+      - "web/**"
       - ".github/workflows/deploy-pages.yml"
   workflow_dispatch:
 
@@ -34,6 +29,10 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
+env:
+  # 저장소 Pages 는 https://<user>.github.io/store-scout/ 아래에 놓인다.
+  STORE_SCOUT_BASE: /store-scout/
+
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -42,52 +41,63 @@ jobs:
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      # enablement: true 를 쓰지 않는다. Actions 의 기본 토큰에는 Pages 를 새로
-      # 만들 권한이 없어서, 아직 안 켜져 있으면 'Resource not accessible by
-      # integration' 으로 죽는다 — 실제로 세 번 그렇게 실패했다. Pages 는 위 주석대로
-      # Settings 에서 한 번 켜고, 여기서는 켜져 있는 설정을 읽기만 한다.
+      # enablement: true 를 쓰지 않는다. Actions 기본 토큰에는 Pages 를 새로 만들 권한이
+      # 없어서, 아직 안 켜져 있으면 'Resource not accessible by integration' 으로 죽는다.
       - uses: actions/configure-pages@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install
+        working-directory: web
+        run: npm ci
+
+      - name: Typecheck
+        working-directory: web
+        run: npm run typecheck
+
+      - name: Build
+        working-directory: web
+        run: npm run build
+
       - name: Assemble site
-        # 사이트 구조 (store-scout.com 기준)
-        #   /            스스닷컴 서비스 소개
-        #   /input/      후보지 데이터 입력
-        #   /consult/    고객 상담 — 서버 없음, 개인정보는 브라우저 밖으로 안 나간다
-        #   /app/        안내 페이지만. 심의 콘솔은 올리지 않는다.
         run: |
-          mkdir -p _site/app
-          cp cafe-trade-area/index.html _site/index.html
-          cp -r cafe-trade-area/input _site/input
-          cp -r cafe-trade-area/consult _site/consult
-          # 두 화면이 함께 쓰는 스타일. 빠지면 양쪽 다 스타일 없이 뜬다
-          cp -r cafe-trade-area/shared _site/shared
-          # 소개 페이지가 app/ 를 링크한다. 파일만 빼면 깨진 링크가 남으므로
-          # 같은 자리에 안내 페이지를 두어 링크는 살리고 콘솔은 올리지 않는다.
-          cp .github/pages/심의콘솔-안내.html _site/app/index.html
+          mv web/dist _site
+          test -s _site/index.html               || { echo "메인 페이지가 없습니다"; exit 1; }
+          test -s _site/consultation/index.html  || { echo "상담 페이지가 없습니다"; exit 1; }
 
-          # ── 여기부터 가드. 하나라도 걸리면 배포하지 않는다. ──
-          test -s _site/index.html          || { echo "소개 페이지가 없습니다"; exit 1; }
-          test -s _site/input/index.html    || { echo "데이터 입력 페이지가 없습니다"; exit 1; }
-          test -s _site/consult/index.html  || { echo "상담 페이지가 없습니다"; exit 1; }
-          test -s _site/shared/base.css     || { echo "공통 스타일이 없습니다"; exit 1; }
+          # ── 여기부터 가드. 하나라도 걸리면 배포하지 않는다. ──────────────
+          # 공개 프론트에 백엔드 값이 섞이면 회사 원가 모델이 그대로 나간다.
+          # 실제로 옛 정적 화면이 그 상태였다 — 오류가 아니라서 아무도 몰랐다.
+          # 값(980·0.412…)만 막으면 이름을 바꿔 빠져나가므로 이름으로 막는다.
+          # 변수 이름은 ASCII 여야 한다 — bash 는 한글 변수명을 받지 않는다.
+          BACKEND_WORDS='고정인건비|대출비율|연금리|리스_월|변동비율|좌석수_기본|흡인력|잔존율|등시선|m5_verdict|quick_site|설정\.yaml'
+          if grep -rqE "$BACKEND_WORDS" _site/; then
+            echo "::error::백엔드 값·이름이 공개 산출물에 있습니다"
+            grep -rhoE "$BACKEND_WORDS" _site/ | sort -u | head -20
+            exit 1
+          fi
 
-          # 상담 페이지는 개인정보를 다룬다 — 어떤 형태로든 외부 전송 코드가 섞이면 중단
-          if grep -rqE 'fetch\(|XMLHttpRequest|sendBeacon|WebSocket' _site/consult/; then
-            echo "상담 페이지에 외부 전송 코드가 있습니다"; exit 1
+          # 백엔드 파일이 정적 산출물에 섞이면 안 된다
+          if find _site \( -name '*.py' -o -name '*.yaml' -o -name '*.yml' \) | grep -q .; then
+            echo "::error::백엔드 파일이 공개 산출물에 있습니다"
+            find _site \( -name '*.py' -o -name '*.yaml' -o -name '*.yml' \)
+            exit 1
           fi
-          # 심의 콘솔 자산이 섞였는지 — 사내 한정이다
-          if [ -e _site/app/js ] || [ -e _site/app/styles.css ]; then
-            echo "심의 콘솔 자산이 배포 산출물에 있습니다"; exit 1
+
+          # 상담 화면은 개인정보를 다룬다 — 서버로 보내는 코드가 있으면 중단.
+          # 카카오 우편번호 스크립트(주소 검색)는 <script src> 라 여기 걸리지 않는다.
+          if grep -rq "XMLHttpRequest\|sendBeacon\|new WebSocket" _site/assets/; then
+            echo "::error::상담 화면에 외부 전송 코드가 있습니다"
+            exit 1
           fi
-          # 알고리즘 문서는 백엔드 문서다
-          if find _site -name '알고리즘.html' | grep -q .; then
-            echo "알고리즘 문서가 배포 산출물에 있습니다"; exit 1
-          fi
-          # 서버 코드가 섞였는지 — 정적 사이트에 있을 이유가 없다
-          if find _site -name '*.py' | grep -q .; then
-            echo "파이썬 파일이 배포 산출물에 있습니다"; exit 1
-          fi
-      - name: Upload site
-        uses: actions/upload-pages-artifact@v3
+
+          echo "가드 통과 — 공개 산출물에 백엔드 내용 없음"
+          du -sh _site
+
+      - uses: actions/upload-pages-artifact@v3
         with:
           path: _site
       - id: deployment

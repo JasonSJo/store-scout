@@ -585,6 +585,66 @@ class TestPages(unittest.TestCase):
         self.assertIn('http-equiv="refresh"', body)
 
 
+class TestFrontendBackendSplit(unittest.TestCase):
+    """프론트엔드(web/)와 백엔드(analysis/ · server/)의 경계.
+
+    옛 공개 화면은 회사의 원가 모델을 그대로 배포하고 있었다 — 운영형태별 고정인건비,
+    차입 가정, 변동비율, BEP 공식이 브라우저에서 읽혔다. 오류가 아니라서 아무도
+    알려 주지 않았고, 그것을 막는 장치도 없었다. 여기가 그 장치다."""
+
+    WEB = "web"
+    # 값(980·0.412…)만 막으면 이름을 바꿔 빠져나간다. 이름으로 막는다.
+    백엔드말 = ("고정인건비", "대출비율", "연금리", "리스_월", "변동비율",
+              "좌석수_기본", "흡인력", "잔존율", "등시선", "m5_verdict",
+              "quick_site", "설정.yaml")
+
+    def 프론트소스(self):
+        뿌리 = ROOT / self.WEB
+        for 확장 in ("*.tsx", "*.ts", "*.css", "*.html"):
+            for f in 뿌리.rglob(확장):
+                if "node_modules" in f.parts or "dist" in f.parts:
+                    continue
+                yield f
+
+    def test_프론트_소스에_백엔드_값이_없다(self):
+        for f in self.프론트소스():
+            글 = f.read_text(encoding="utf-8", errors="replace")
+            for 말 in self.백엔드말:
+                self.assertNotIn(말, 글,
+                                 f"{f.relative_to(ROOT)} 에 백엔드 값 '{말}' 이 있습니다")
+
+    def test_상담_화면에_서버_전송이_없다(self):
+        """이 화면은 고객 성명·연락처를 받는다. fetch 한 줄이 들어가는 순간
+        '이 브라우저를 벗어나지 않는다' 는 약속이 거짓이 된다."""
+        상담 = ROOT / self.WEB / "app" / "consultation" / "page.tsx"
+        글 = 상담.read_text(encoding="utf-8")
+        for 금지 in ("fetch(", "XMLHttpRequest", "sendBeacon", "new WebSocket",
+                   "localStorage", "sessionStorage"):
+            self.assertNotIn(금지, 글, f"상담 화면에 {금지} 가 있습니다")
+
+    def test_배포가_백엔드를_올리지_않는다(self):
+        """워크플로가 web/ 만 올리는가. 백엔드 경로가 산출물 조립에 끼면 안 된다."""
+        wf = (ROOT / ".github" / "workflows" / "deploy-pages.yml").read_text(encoding="utf-8")
+        self.assertIn("mv web/dist _site", wf, "web/ 빌드 결과를 올리지 않습니다")
+        for 백엔드 in ("cafe-trade-area/analysis", "cafe-trade-area/app", "server/"):
+            self.assertNotIn(f"cp -r {백엔드}", wf, f"{백엔드} 를 복사합니다")
+
+    def test_배포_가드가_백엔드말을_전부_막는다(self):
+        """검사 목록이 이 테스트와 갈리면, 한쪽만 고치고 안심하게 된다."""
+        wf = (ROOT / ".github" / "workflows" / "deploy-pages.yml").read_text(encoding="utf-8")
+        for 말 in self.백엔드말:
+            표기 = 말.replace(".", "\\.")
+            self.assertIn(표기, wf, f"배포 가드가 '{말}' 을 막지 않습니다")
+
+    def test_가드_변수명이_ASCII다(self):
+        """bash 는 비ASCII 변수명을 받지 않는다 — '금지=...' 는 command not found 로
+        죽는다. 실제로 그렇게 썼다가 걸렸다. 가드가 죽으면 가드가 없는 것과 같다."""
+        import re as _re
+        wf = (ROOT / ".github" / "workflows" / "deploy-pages.yml").read_text(encoding="utf-8")
+        나쁜 = _re.findall(r"(?m)^\s*([^\x00-\x7F][^\s=]*)=", wf)
+        self.assertEqual(나쁜, [], f"쉘 변수 이름에 한글이 있습니다: {나쁜}")
+
+
 class TestKoreanTypesetting(unittest.TestCase):
     """한글은 낱자 사이 어디서나 끊긴다 — 브라우저 기본값이 그렇다.
 
@@ -597,8 +657,6 @@ class TestKoreanTypesetting(unittest.TestCase):
 
     # 화면이 늘면 여기에 더한다. 새 화면이 이 목록에 없으면 검사도 되지 않는다.
     화면들 = (
-        "cafe-trade-area/index.html",              # 소개
-        "cafe-trade-area/shared/base.css",         # 상담 · 데이터 입력
         "cafe-trade-area/app/styles.css",          # 심의 콘솔
         "server/ui.py",                            # SaaS
         ".github/pages/심의콘솔-안내.html",         # 콘솔 안내
@@ -620,11 +678,10 @@ class TestKoreanTypesetting(unittest.TestCase):
         """ch 는 '0' 자 너비다. 한글 한 자는 그보다 두 배 가까이 넓어서, 60ch 로
         적어 두면 실제로는 35자 남짓에서 줄이 바뀐다 — 적어 둔 값과 화면이 다르다.
         한글에서는 1em 이 대략 한 자이므로 em 으로 적으면 읽는 대로 나온다."""
-        for 파일 in ("cafe-trade-area/index.html", "cafe-trade-area/shared/base.css"):
+        for 파일 in ("cafe-trade-area/app/styles.css",):
             글 = (ROOT / 파일).read_text(encoding="utf-8")
             self.assertEqual(re.findall(r"max-width:\s*\d+(?:\.\d+)?ch", 글), [],
                              f"{파일} 이 아직 ch 로 폭을 잡습니다")
-
 
 class TestConsultPrivacy(unittest.TestCase):
     """상담은 이 제품에서 개인정보가 들어오는 유일한 자리다.
