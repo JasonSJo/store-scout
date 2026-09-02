@@ -996,6 +996,19 @@ class TestDeployment(unittest.TestCase):
         self.assertIn("tunnel", d["services"]["tunnel"].get("profiles", []),
                       "터널이 프로필 밖에 있으면 늘 함께 뜹니다")
 
+    def test_임시터널이_상시_운영으로_굳지_않는다(self):
+        """trycloudflare 주소는 Access 로 막을 수 없고 재시작마다 바뀐다. 확인용으로
+        띄운 것이 restart: unless-stopped 였다면 재부팅 뒤에도 살아나, 고객
+        연락처가 든 화면이 아무나 닿는 주소에 조용히 붙어 있게 된다."""
+        import yaml as _yaml
+        d = _yaml.safe_load((ROOT / "docker-compose.yml").read_text(encoding="utf-8"))
+        q = d["services"]["tunnel-quick"]
+        self.assertIn("quick", q.get("profiles", []),
+                      "임시 터널이 프로필 밖에 있으면 기본 실행에 따라옵니다")
+        self.assertEqual(str(q.get("restart")), "no",
+                         "임시 터널이 되살아나면 확인용이 상시 노출이 됩니다")
+        self.assertIn("--url", q["command"], "임시 터널은 토큰 없이 --url 로 뜹니다")
+
     def test_터널_안내가_Secure_쿠키를_함께_말한다(self):
         """Cloudflare 가 TLS 를 끝내면 앱은 평문 HTTP 로 받는다. STORE_SCOUT_HTTPS
         를 켜지 않으면 로그인 쿠키에 Secure 가 붙지 않는다 — 화면은 멀쩡히 돌고

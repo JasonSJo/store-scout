@@ -87,5 +87,28 @@ services:
       app:
         condition: service_healthy
 
+  # ── 도메인이 아직 없을 때, 연결만 확인해 보는 임시 터널 (profile: quick) ──
+  # 토큰도 도메인도 없이 즉석 주소(https://….trycloudflare.com)를 하나 받는다.
+  # 앱–터널–브라우저 경로가 실제로 뚫리는지 5분 만에 확인할 수 있다.
+  #
+  #   docker compose --profile quick up tunnel-quick     ← -d 를 붙이지 마십시오
+  #
+  # 로그에 뜨는 주소로 들어가 보고, 확인이 끝나면 Ctrl+C 로 끕니다.
+  #
+  # ⚠ 상시 운영에 쓰지 마십시오. 이것은 확인용입니다.
+  #   · Access 로 막을 수 없다 — 주소를 아는 사람은 누구나 로그인 화면에 닿는다.
+  #   · 껐다 켜면 주소가 매번 바뀐다. 영업팀에 줄 수 있는 주소가 아니다.
+  #   · 그래서 restart 를 "no" 로 둔다. 재부팅해도 되살아나지 않는다.
+  #   고객 성명·연락처가 들어간 DB 로 이걸 띄우지 마십시오. 실제 운영은 위의
+  #   tunnel(도메인 + 토큰 + Access)로 갑니다.
+  tunnel-quick:
+    image: cloudflare/cloudflared:latest
+    profiles: ["quick"]
+    restart: "no"
+    command: tunnel --no-autoupdate --url http://app:8000
+    depends_on:
+      app:
+        condition: service_healthy
+
 volumes:
   scout-data:
