@@ -1,10 +1,10 @@
 import Link from '@/lib/link';
-import { ArrowUpRight, ArrowRight, MapPin, Radar, Building2, Users, ChevronDown, Layers3, ClipboardList } from 'lucide-react';
+import { ArrowUpRight, ArrowRight, MapPin, Radar, Building2, Users, ChevronDown, Layers3, ClipboardList, Sparkles } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
 export default function Home() {
   return <div className="site-home">
-    <header className="site-header"><Link href="/" className="brand"><span className="brand-mark"><span className="brand-monogram" aria-hidden="true">스스</span></span><strong>스스닷컴<span>stores scout</span></strong></Link><nav><a href="#how">서비스 소개</a><Link href="/consultation">상권분석</Link></nav><span className="header-label">FOR FRANCHISE TEAMS <ArrowUpRight size={14}/></span></header>
+    <header className="site-header"><Link href="/" className="brand" aria-label="스스닷컴 홈"><span className="brand-mark"><span className="brand-monogram" aria-hidden="true">스스</span></span><strong>스스닷컴<span>stores scout</span></strong></Link><nav aria-label="주요 메뉴"><a href="#how">서비스 소개</a><a href="#data">데이터 안내</a><Link className="nav-cta" href="/consultation"><Sparkles size={14}/> 상권분석 시작</Link></nav><span className="header-label">FOR FRANCHISE TEAMS <ArrowUpRight size={14}/></span></header>
     <main>
       <section className="hero">
         <div className="hero-eyebrow"><span/> 좋은 매장의 시작, 정확한 상권에서</div>
