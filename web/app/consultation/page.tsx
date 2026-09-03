@@ -452,7 +452,7 @@ export default function ConsultationPage() {
               <span className="brand-monogram">스스</span>
             </span>
             <strong>
-              스스닷컴<span>store scout</span>
+              스스닷컴<span>stores scout</span>
             </strong>
           </Link>
           <Button variant="outline" onClick={() => setComplete(false)}>
@@ -568,7 +568,7 @@ export default function ConsultationPage() {
             </span>
           </span>
           <strong>
-            스스닷컴<span>store scout</span>
+            스스닷컴<span>stores scout</span>
           </strong>
         </Link>
         <span className="tool-name">상권분석 도구</span>
