@@ -10,7 +10,9 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "test:map": "node tests/kakao-map.mjs",
+    "test:phone": "node tests/phone.mjs"
   },
   "dependencies": {
     "@base-ui/react": "1.7.0",

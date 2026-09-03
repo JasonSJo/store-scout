@@ -1,5 +1,8 @@
 # 스스닷컴 (stores-scout.com)
 
+카카오맵 공개 화면 변경과 Codex/Claude 역할 분담·배포 점검은
+**[OPERATIONS_HANDOFF.md](OPERATIONS_HANDOFF.md)** 를 참고하세요.
+
 프랜차이즈 **운영팀·영업팀**을 위한 상권분석 구독 서비스. 조직 단위로
 상권분석 알고리즘 M1~M6 을 돌리고 결과를 보관·통제한다.
 

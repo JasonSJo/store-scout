@@ -36,6 +36,9 @@ import {
   DialogDescription,
 } from '@/components/ui/dialog';
 import { REGIONS } from '@/lib/regions';
+import { formatKoreanPhone } from '@/lib/phone';
+import { PropertyMap, type MapPoint } from '@/components/property-map';
+const NO_LISTING_POINTS: MapPoint[] = [];
 
 type Address = { zip: string; main: string; detail: string };
 type Area = { city: string; district: string };
@@ -446,7 +449,7 @@ export default function ConsultationPage() {
   if (complete)
     return (
       <div className="workspace-page property-review">
-        <header className="tool-header">
+        <header className="tool-header result-header">
           <Link href="/" className="brand">
             <span className="brand-mark">
               <span className="brand-monogram">스스</span>
@@ -455,6 +458,7 @@ export default function ConsultationPage() {
               스스닷컴<span>stores scout</span>
             </strong>
           </Link>
+          <nav className="tool-nav" aria-label="주요 메뉴"><Link href="/">홈</Link><Link href="/consultation" aria-current="page">상권분석</Link></nav>
           <Button variant="outline" onClick={() => setComplete(false)}>
             <ArrowLeft size={16} /> 상담 조건 수정
           </Button>
@@ -507,8 +511,14 @@ export default function ConsultationPage() {
             <p className="planned">매물 연동 준비 중</p>
             <p>
               지금은 상담 조건을 정리해 파일로 내려받는 데까지 됩니다. 조건별 매매·임대
-              목록과 지도는 매물 공급처를 연결한 뒤 열립니다.
+              목록은 매물 공급처를 연결한 뒤 열립니다. 아래 카카오맵은 위치 참고용이며,
+              아직 매물 마커가 없다는 것이 해당 지역에 매물이 없다는 뜻은 아닙니다.
             </p>
+          </section>
+          <section className="workspace-card" aria-labelledby="result-map-title">
+            <h2 id="result-map-title">카카오맵 · 위치 참고</h2>
+            <p>매물 데이터 미연동 · 상담 고객의 이름·전화번호·주소는 지도에 전달하지 않습니다.</p>
+            <PropertyMap points={NO_LISTING_POINTS} />
           </section>
           <details className="workspace-card property-save">
             <summary>상담 내용 확인·저장·내려받기</summary>
@@ -571,6 +581,7 @@ export default function ConsultationPage() {
             스스닷컴<span>stores scout</span>
           </strong>
         </Link>
+        <nav className="tool-nav" aria-label="주요 메뉴"><Link href="/">홈</Link><Link href="/consultation" aria-current="page">상권분석</Link></nav>
         <span className="tool-name">상권분석 도구</span>
         {/* /workspace 는 서버가 있어야 하는 화면이다. 이 배포에는 없다 —
             없는 곳으로 보내는 링크를 두면 404 가 난다. 메인으로 돌린다. */}
@@ -673,7 +684,8 @@ export default function ConsultationPage() {
                     autoComplete="tel"
                     placeholder="010-0000-0000"
                     value={form.phone}
-                    onChange={(e) => update('phone', e.target.value)}
+                    inputMode="numeric"
+                    onChange={(e) => update('phone', formatKoreanPhone(e.target.value))}
                     required
                     maxLength={14}
                   />
