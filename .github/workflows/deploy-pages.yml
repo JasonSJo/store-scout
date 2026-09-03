@@ -10,7 +10,13 @@ name: 스스닷컴 공개 페이지
 #   server/                     SaaS. 컨테이너로 따로 뜬다
 #
 # 활성화: Settings → Pages → Source = "GitHub Actions"
-# 도메인: Custom domain 을 붙이는 날 아래 STORE_SCOUT_BASE 를 '/' 로 바꾼다.
+#
+# 도메인: web/public/CNAME 이 스위치다.
+#   없다  → https://<user>.github.io/store-scout/  (base = /store-scout/)
+#   있다  → https://store-scout.com/               (base = /)
+# GitHub 는 Actions 배포에서 CNAME 파일을 읽지 않는다 — 도메인은 Settings → Pages
+# 에서 붙인다. 이 파일은 우리 쪽 스위치일 뿐이다. 순서와 절차는 DEPLOY.md 의
+# 「공개 페이지 도메인」 절에 있다. 순서를 어기면 몇 분 동안 사이트가 깨진다.
 
 on:
   push:
@@ -29,10 +35,6 @@ concurrency:
   group: pages
   cancel-in-progress: true
 
-env:
-  # 저장소 Pages 는 https://<user>.github.io/store-scout/ 아래에 놓인다.
-  STORE_SCOUT_BASE: /store-scout/
-
 jobs:
   deploy:
     runs-on: ubuntu-latest
@@ -50,6 +52,24 @@ jobs:
           cache: npm
           cache-dependency-path: web/package-lock.json
 
+      # base 를 CNAME 유무로 정한다. 사람이 두 자리(도메인 설정·base)를 따로 고치면
+      # 한쪽만 바뀐 채 배포되고, 그러면 모든 자산이 404 라 흰 화면이 뜬다 — 오류 없이.
+      - name: Decide base
+        id: base
+        run: |
+          if [ -s web/public/CNAME ]; then
+            DOMAIN="$(tr -d '[:space:]' < web/public/CNAME)"
+            if [ "$DOMAIN" != "store-scout.com" ]; then
+              echo "::error::web/public/CNAME 이 store-scout.com 이 아닙니다: '$DOMAIN'"
+              exit 1
+            fi
+            echo "base=/" >> "$GITHUB_OUTPUT"
+            echo "도메인 배포 — base=/ ($DOMAIN)"
+          else
+            echo "base=/store-scout/" >> "$GITHUB_OUTPUT"
+            echo "저장소 Pages 배포 — base=/store-scout/"
+          fi
+
       - name: Install
         working-directory: web
         run: npm ci
@@ -60,6 +80,8 @@ jobs:
 
       - name: Build
         working-directory: web
+        env:
+          STORE_SCOUT_BASE: ${{ steps.base.outputs.base }}
         run: npm run build
 
       - name: Assemble site
@@ -67,6 +89,17 @@ jobs:
           mv web/dist _site
           test -s _site/index.html               || { echo "메인 페이지가 없습니다"; exit 1; }
           test -s _site/consultation/index.html  || { echo "상담 페이지가 없습니다"; exit 1; }
+
+          # 빌드된 HTML 이 정한 base 로 자산을 가리키는지 본다. 어긋나면 흰 화면이다.
+          BASE='${{ steps.base.outputs.base }}'
+          if ! grep -q "src=\"${BASE}assets/" _site/index.html; then
+            echo "::error::index.html 의 자산 경로가 base(${BASE}) 와 다릅니다"
+            grep -o 'src="[^"]*"' _site/index.html | head
+            exit 1
+          fi
+          if [ "$BASE" = "/" ]; then
+            test -s _site/CNAME || { echo "::error::CNAME 이 산출물에 없습니다"; exit 1; }
+          fi
 
           # ── 여기부터 가드. 하나라도 걸리면 배포하지 않는다. ──────────────
           # 공개 프론트에 백엔드 값이 섞이면 회사 원가 모델이 그대로 나간다.

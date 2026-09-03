@@ -818,6 +818,35 @@ class TestFrontendBackendSplit(unittest.TestCase):
             표기 = 말.replace(".", "\\.")
             self.assertIn(표기, wf, f"배포 가드가 '{말}' 을 막지 않습니다")
 
+    def test_도메인_스위치는_CNAME_파일이다(self):
+        """base(/store-scout/ 와 /)는 사람이 워크플로를 고쳐서 바꾸는 것이 아니라
+        web/public/CNAME 의 유무로 정해진다. 두 자리를 따로 고치면 한쪽만 바뀐 채
+        배포되고, 그러면 모든 자산이 404 라 흰 화면이 뜬다 — 오류 없이."""
+        wf = (ROOT / ".github" / "workflows" / "deploy-pages.yml").read_text(encoding="utf-8")
+        self.assertIn("web/public/CNAME", wf)
+        self.assertIn('echo "base=/" >> "$GITHUB_OUTPUT"', wf)
+        self.assertIn('echo "base=/store-scout/" >> "$GITHUB_OUTPUT"', wf)
+        self.assertNotRegex(wf, r"^\s*STORE_SCOUT_BASE:\s*/store-scout/\s*$",
+                            "base 를 워크플로에 박아 두면 CNAME 스위치가 무력해집니다")
+        self.assertIn("steps.base.outputs.base", wf)
+
+    def test_배포가_자산_경로와_base_를_대조한다(self):
+        wf = (ROOT / ".github" / "workflows" / "deploy-pages.yml").read_text(encoding="utf-8")
+        self.assertIn('grep -q "src=\\"${BASE}assets/" _site/index.html', wf)
+
+    def test_CNAME_이_있으면_우리_도메인이다(self):
+        """오타 난 CNAME 은 사이트를 두 주소 모두에서 내린다 — github.io 는 그
+        도메인으로 넘기고, 그 도메인은 아무 데도 없다."""
+        cname = ROOT / "web" / "public" / "CNAME"
+        if not cname.exists():
+            self.skipTest("아직 도메인을 붙이지 않았다")
+        self.assertEqual(cname.read_text(encoding="utf-8").strip(), "store-scout.com")
+
+    def test_vite_기본_base_는_저장소_Pages_다(self):
+        """CNAME 없이 빌드하면 지금 살아 있는 주소(/store-scout/)여야 한다."""
+        cfg = (ROOT / "web" / "vite.config.ts").read_text(encoding="utf-8")
+        self.assertIn("process.env.STORE_SCOUT_BASE || '/store-scout/'", cfg)
+
     def test_가드_변수명이_ASCII다(self):
         """bash 는 비ASCII 변수명을 받지 않는다 — '금지=...' 는 command not found 로
         죽는다. 실제로 그렇게 썼다가 걸렸다. 가드가 죽으면 가드가 없는 것과 같다."""
