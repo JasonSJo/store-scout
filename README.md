@@ -1,4 +1,4 @@
-# 스스닷컴 (store-scout.com)
+# 스스닷컴 (stores-scout.com)
 
 프랜차이즈 **운영팀·영업팀**을 위한 상권분석 구독 서비스. 조직 단위로
 상권분석 알고리즘 M1~M6 을 돌리고 결과를 보관·통제한다.
@@ -11,7 +11,7 @@
 ## 한 저장소에 다 있다
 
     cafe-trade-area/analysis/   M1~M6 파이프라인 (알고리즘)
-    cafe-trade-area/index.html  스스닷컴 소개 — store-scout.com 으로 나간다
+    cafe-trade-area/index.html  스스닷컴 소개 — stores-scout.com 으로 나간다
     cafe-trade-area/input/      후보지 데이터 입력 (공개)
     cafe-trade-area/consult/    고객 상담 (공개 · 서버 없음)
     cafe-trade-area/app/        심의 콘솔 — 사내 한정, 배포하지 않는다

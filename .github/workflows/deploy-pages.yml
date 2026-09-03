@@ -1,6 +1,6 @@
 name: 스스닷컴 공개 페이지
 
-# store-scout.com 으로 나갈 공개 페이지를 GitHub Pages 로 배포한다.
+# stores-scout.com 으로 나갈 공개 페이지를 GitHub Pages 로 배포한다.
 # 프론트엔드는 web/ 하나뿐이다 — React + Vite 정적 빌드.
 #
 # 배포하지 않는 것 (전부 백엔드다)
@@ -13,7 +13,7 @@ name: 스스닷컴 공개 페이지
 #
 # 도메인: web/public/CNAME 이 스위치다.
 #   없다  → https://<user>.github.io/store-scout/  (base = /store-scout/)
-#   있다  → https://store-scout.com/               (base = /)
+#   있다  → https://stores-scout.com/               (base = /)
 # GitHub 는 Actions 배포에서 CNAME 파일을 읽지 않는다 — 도메인은 Settings → Pages
 # 에서 붙인다. 이 파일은 우리 쪽 스위치일 뿐이다. 순서와 절차는 DEPLOY.md 의
 # 「공개 페이지 도메인」 절에 있다. 순서를 어기면 몇 분 동안 사이트가 깨진다.
@@ -59,8 +59,8 @@ jobs:
         run: |
           if [ -s web/public/CNAME ]; then
             DOMAIN="$(tr -d '[:space:]' < web/public/CNAME)"
-            if [ "$DOMAIN" != "store-scout.com" ]; then
-              echo "::error::web/public/CNAME 이 store-scout.com 이 아닙니다: '$DOMAIN'"
+            if [ "$DOMAIN" != "stores-scout.com" ]; then
+              echo "::error::web/public/CNAME 이 stores-scout.com 이 아닙니다: '$DOMAIN'"
               exit 1
             fi
             echo "base=/" >> "$GITHUB_OUTPUT"

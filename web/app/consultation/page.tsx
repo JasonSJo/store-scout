@@ -621,7 +621,7 @@ export default function ConsultationPage() {
               페이지를 벗어나면 지워집니다. 남기시려면 상담 파일로 내려받으십시오.
             </p>
           </div>
-          <span className="sidebar-domain">store-scout.com</span>
+          <span className="sidebar-domain">stores-scout.com</span>
         </aside>
         <main className="consultation-main">
           <div className="breadcrumb">

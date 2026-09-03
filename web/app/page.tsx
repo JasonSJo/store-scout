@@ -18,6 +18,6 @@ export default function Home() {
       </section>
       <section className="capabilities" id="how"><div className="section-intro"><span className="eyebrow">FROM INSIGHT TO OPENING</span><h2>좋은 입지를 찾는 일,<br/>더 명확하고 간편하게.</h2><p>흩어져 있던 정보를 모아<br/>출점 검토의 흐름을 연결합니다.</p></div><div className="capability"><span className="feature-number">01</span><ClipboardList/><h3>고객을 이해하고</h3><p>창업 희망 지역, 투자금, 운영 방식까지.<br/>상담 조건을 한눈에 정리하세요.</p><Link href="/consultation">고객 상담 시작 <ArrowUpRight size={16}/></Link></div><div className="capability"><span className="feature-number">02</span><Radar/><h3>상권을 살펴보고</h3><p>유동인구와 지역 특성을 바탕으로<br/>입지의 가능성을 검토합니다.</p><span className="planned">데이터 연동 준비 중</span></div><div className="capability"><span className="feature-number">03</span><Layers3/><h3>출점 조건을 비교합니다</h3><p>상권과 부동산 정보를 함께 살펴<br/>고객에게 맞는 공간을 찾습니다.</p><span className="planned">매물 연동 준비 중</span></div></section>
       <section className="data-note" id="data"><div><MapPin size={21}/><div><h3>현장의 정보가, 더 나은 의사결정으로.</h3><p>현재 고객 상담 도구를 이용할 수 있습니다. 실시간 유동인구·부동산 정보는 제공처 연결 후 서비스됩니다.</p></div></div><Link href="/consultation">상담 도구 열기 <ArrowRight size={17}/></Link></section>
-    </main><footer><Link href="/" className="footer-brand">스스닷컴 <span>store-scout.com</span></Link><span>© 2026 STORE SCOUT. All rights reserved.</span><span>좋은 입지의 시작.</span></footer>
+    </main><footer><Link href="/" className="footer-brand">스스닷컴 <span>stores-scout.com</span></Link><span>© 2026 STORE SCOUT. All rights reserved.</span><span>좋은 입지의 시작.</span></footer>
   </div>;
 }

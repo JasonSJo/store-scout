@@ -840,7 +840,7 @@ class TestFrontendBackendSplit(unittest.TestCase):
         cname = ROOT / "web" / "public" / "CNAME"
         if not cname.exists():
             self.skipTest("아직 도메인을 붙이지 않았다")
-        self.assertEqual(cname.read_text(encoding="utf-8").strip(), "store-scout.com")
+        self.assertEqual(cname.read_text(encoding="utf-8").strip(), "stores-scout.com")
 
     def test_vite_기본_base_는_저장소_Pages_다(self):
         """CNAME 없이 빌드하면 지금 살아 있는 주소(/store-scout/)여야 한다."""
@@ -883,7 +883,7 @@ class TestKoreanTypesetting(unittest.TestCase):
                             f"한글이 낱자 사이에서 끊깁니다")
             self.assertTrue(any("overflow-wrap" in b for b in 몸통),
                             f"{파일} 에 overflow-wrap 이 없습니다 — keep-all 만 켜면 "
-                            f"store-scout.com 같은 긴 라틴 토막이 칸을 넘칩니다")
+                            f"stores-scout.com 같은 긴 라틴 토막이 칸을 넘칩니다")
 
     def test_한글_폭은_ch_가_아니라_em_으로_잡는다(self):
         """ch 는 '0' 자 너비다. 한글 한 자는 그보다 두 배 가까이 넓어서, 60ch 로
