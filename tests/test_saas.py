@@ -819,14 +819,14 @@ class TestFrontendBackendSplit(unittest.TestCase):
             self.assertIn(표기, wf, f"배포 가드가 '{말}' 을 막지 않습니다")
 
     def test_도메인_스위치는_CNAME_파일이다(self):
-        """base(/store-scout/ 와 /)는 사람이 워크플로를 고쳐서 바꾸는 것이 아니라
+        """base(/stores-scout/ 와 /)는 사람이 워크플로를 고쳐서 바꾸는 것이 아니라
         web/public/CNAME 의 유무로 정해진다. 두 자리를 따로 고치면 한쪽만 바뀐 채
         배포되고, 그러면 모든 자산이 404 라 흰 화면이 뜬다 — 오류 없이."""
         wf = (ROOT / ".github" / "workflows" / "deploy-pages.yml").read_text(encoding="utf-8")
         self.assertIn("web/public/CNAME", wf)
         self.assertIn('echo "base=/" >> "$GITHUB_OUTPUT"', wf)
-        self.assertIn('echo "base=/store-scout/" >> "$GITHUB_OUTPUT"', wf)
-        self.assertNotRegex(wf, r"^\s*STORE_SCOUT_BASE:\s*/store-scout/\s*$",
+        self.assertIn('echo "base=/stores-scout/" >> "$GITHUB_OUTPUT"', wf)
+        self.assertNotRegex(wf, r"^\s*STORE_SCOUT_BASE:\s*/stores-scout/\s*$",
                             "base 를 워크플로에 박아 두면 CNAME 스위치가 무력해집니다")
         self.assertIn("steps.base.outputs.base", wf)
 
@@ -843,9 +843,9 @@ class TestFrontendBackendSplit(unittest.TestCase):
         self.assertEqual(cname.read_text(encoding="utf-8").strip(), "stores-scout.com")
 
     def test_vite_기본_base_는_저장소_Pages_다(self):
-        """CNAME 없이 빌드하면 지금 살아 있는 주소(/store-scout/)여야 한다."""
+        """CNAME 없이 빌드하면 지금 살아 있는 주소(/stores-scout/)여야 한다."""
         cfg = (ROOT / "web" / "vite.config.ts").read_text(encoding="utf-8")
-        self.assertIn("process.env.STORE_SCOUT_BASE || '/store-scout/'", cfg)
+        self.assertIn("process.env.STORE_SCOUT_BASE || '/stores-scout/'", cfg)
 
     def test_가드_변수명이_ASCII다(self):
         """bash 는 비ASCII 변수명을 받지 않는다 — '금지=...' 는 command not found 로

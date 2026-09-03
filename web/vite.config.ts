@@ -6,9 +6,9 @@ import tailwindcss from '@tailwindcss/vite';
 import { fileURLToPath, URL } from 'node:url';
 import { resolve } from 'node:path';
 
-// 저장소 Pages 는 /store-scout/ 아래에 놓인다. 사용자 도메인을 붙이면 '/' 로 준다.
+// 저장소 Pages 는 /stores-scout/ 아래에 놓인다. 사용자 도메인을 붙이면 '/' 로 준다.
 //   STORE_SCOUT_BASE=/ pnpm build
-const base = process.env.STORE_SCOUT_BASE || '/store-scout/';
+const base = process.env.STORE_SCOUT_BASE || '/stores-scout/';
 
 export default defineConfig({
   base,

@@ -186,7 +186,8 @@ python3 -m server.bootstrap --org "조직명" --email you@brand.co.kr
 
 ## 공개 페이지 도메인 — `stores-scout.com` (GitHub Pages)
 
-공개 페이지(`web/`)는 지금 `https://jasonsjo.github.io/store-scout/` 에 떠 있다.
+공개 페이지(`web/`)는 `https://stores-scout.com/` 에 떠 있다. CNAME 스위치가 없으면
+`https://jasonsjo.github.io/stores-scout/` 로 돌아간다(저장소 이름이 경로가 된다).
 여기에 `stores-scout.com` 을 붙이는 절차다. **순서가 있다.** 어기면 몇 분 동안
 사이트가 두 주소 모두에서 깨진다 — 오류가 아니라 흰 화면이다.
 
@@ -247,8 +248,8 @@ dig +short www.stores-scout.com CNAME  # jasonsjo.github.io.
 `stores-scout.com` 을 넣고 **Save**. GitHub 가 DNS 를 검사한다(1분 안팎). 초록
 체크가 뜨면 **Enforce HTTPS** 를 켠다 — 인증서 발급에 몇 분에서 한 시간.
 
-이 순간부터 `jasonsjo.github.io/store-scout/` 는 `stores-scout.com` 으로 넘어간다.
-그런데 지금 올라가 있는 빌드는 자산을 `/store-scout/assets/…` 에서 찾으므로,
+이 순간부터 `jasonsjo.github.io/stores-scout/` 는 `stores-scout.com` 으로 넘어간다.
+그런데 지금 올라가 있는 빌드는 자산을 `/stores-scout/assets/…` 에서 찾으므로,
 **다음 단계를 바로 이어서** 해야 한다. 그 사이는 흰 화면이다.
 
 ### 3. 저장소 — 스위치 파일 하나
@@ -280,8 +281,8 @@ curl -sI https://jasonsjo.github.io/store-scout/  | head -1   # 301 → stores-s
 ### 되돌리기
 
 `web/public/CNAME` 을 지우고 push, GitHub Settings → Pages 의 Custom domain 을
-비운다. 그러면 `jasonsjo.github.io/store-scout/` 로 돌아간다. 순서는 반대로 —
-파일을 먼저 지워 base 를 `/store-scout/` 로 돌린 뒤 Settings 를 비운다.
+비운다. 그러면 `jasonsjo.github.io/stores-scout/` 로 돌아간다. 순서는 반대로 —
+파일을 먼저 지워 base 를 `/stores-scout/` 로 돌린 뒤 Settings 를 비운다.
 
 ## 사내 서버 + Cloudflare Tunnel  ← 권장
 
@@ -358,7 +359,7 @@ Tunnels** → **Create a tunnel** → **Cloudflared** 선택 → 이름을 짓�
 ### 2. 서버에서
 
 ```bash
-git clone https://github.com/JasonSJo/store-scout && cd store-scout
+git clone https://github.com/JasonSJo/stores-scout && cd stores-scout
 cp .env.example .env
 # .env 를 열어 채운다:
 #   STORE_SCOUT_HTTPS=1           ← 반드시. 안 켜면 로그인 쿠키에 Secure 가 안 붙는다

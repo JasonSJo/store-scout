@@ -12,7 +12,7 @@ name: 스스닷컴 공개 페이지
 # 활성화: Settings → Pages → Source = "GitHub Actions"
 #
 # 도메인: web/public/CNAME 이 스위치다.
-#   없다  → https://<user>.github.io/store-scout/  (base = /store-scout/)
+#   없다  → https://<user>.github.io/stores-scout/  (base = /stores-scout/)
 #   있다  → https://stores-scout.com/               (base = /)
 # GitHub 는 Actions 배포에서 CNAME 파일을 읽지 않는다 — 도메인은 Settings → Pages
 # 에서 붙인다. 이 파일은 우리 쪽 스위치일 뿐이다. 순서와 절차는 DEPLOY.md 의
@@ -66,8 +66,8 @@ jobs:
             echo "base=/" >> "$GITHUB_OUTPUT"
             echo "도메인 배포 — base=/ ($DOMAIN)"
           else
-            echo "base=/store-scout/" >> "$GITHUB_OUTPUT"
-            echo "저장소 Pages 배포 — base=/store-scout/"
+            echo "base=/stores-scout/" >> "$GITHUB_OUTPUT"
+            echo "저장소 Pages 배포 — base=/stores-scout/"
           fi
 
       - name: Install
