@@ -59,6 +59,34 @@ type PostcodeData = {
   roadAddress: string;
   jibunAddress: string;
 };
+// 카카오 지도 SDK 에서 쓰는 만큼만 적는다. 전체 타입을 들이면 쓰지 않는 API 가
+// 수백 개 따라오고, 그중 무엇이 실제로 쓰이는지가 보이지 않게 된다.
+type KakaoLatLng = { getLat(): number; getLng(): number };
+type KakaoMaps = {
+  load(cb: () => void): void;
+  LatLng: new (lat: number, lng: number) => KakaoLatLng;
+  LatLngBounds: new () => { extend(p: KakaoLatLng): void };
+  Map: new (
+    el: HTMLElement,
+    opts: { center: KakaoLatLng; level: number },
+  ) => { setBounds(b: unknown): void; setLevel(l: number): void; setCenter(p: KakaoLatLng): void };
+  Marker: new (opts: { map: unknown; position: KakaoLatLng }) => unknown;
+  CustomOverlay: new (opts: {
+    map: unknown;
+    position: KakaoLatLng;
+    content: HTMLElement;
+    yAnchor?: number;
+  }) => unknown;
+  services: {
+    Status: { OK: string; ZERO_RESULT: string; ERROR: string };
+    Geocoder: new () => {
+      addressSearch(
+        query: string,
+        cb: (result: Array<{ x: string; y: string }>, status: string) => void,
+      ): void;
+    };
+  };
+};
 declare global {
   interface Window {
     kakao?: {
@@ -67,9 +95,25 @@ declare global {
         width: string;
         height: string;
       }) => { embed: (element: HTMLElement) => void };
+      maps?: KakaoMaps;
     };
   }
 }
+
+// 카카오 지도 JS 키. 도메인을 등록해야만 동작하는 키라 공개 페이지에 들어가도
+// 안전하다 — 다른 도메인에서는 쓸 수 없다. 값은 빌드 때 넣는다:
+//   GitHub → Settings → Secrets and variables → Actions → Variables → KAKAO_JS_KEY
+//   로컬:  VITE_KAKAO_JS_KEY=... npm run dev
+// 옛 화면은 키를 브라우저 저장소에 넣게 했는데, 이 화면은 브라우저 저장소가
+// 금지다(개인정보를 브라우저에 남기지 않는다는 약속). 그래서 빌드 변수다.
+const KAKAO_JS_KEY = String(import.meta.env.VITE_KAKAO_JS_KEY ?? '').trim();
+
+type MapState = {
+  status: 'idle' | 'nokey' | 'loading' | 'ready' | 'error';
+  message?: string;
+  plotted: string[]; // 지도에 찍힌 희망 지역
+  missed: string[]; // 좌표를 못 찾은 희망 지역
+};
 const initial: Consultation = {
   name: '',
   phone: '',
@@ -134,6 +178,130 @@ export default function ConsultationPage() {
   ];
   const progress = filled.filter(Boolean).length;
   const total = Number(form.deposit || 0) + Number(form.premium || 0);
+
+  // ── 지도 시작 ──────────────────────────────────────────────────────
+  // 결과 화면의 지도. 카카오 지도 위에 **희망 지역(시·군·구)만** 찍는다.
+  //
+  // 고객명·전화번호·거주지·근무지는 지도에 보내지 않는다. 지도는 카카오
+  // 서버가 그리는 것이라, 거기 보내는 것은 곧 바깥으로 나가는 것이다.
+  // 희망 지역은 '서울특별시 강남구' 같은 행정구역 이름이라 개인정보가 아니다.
+  // 이 경계는 tests/test_saas.py 가 지킨다 — 이 블록 안에 form.home 이나
+  // form.phone 이 들어오면 테스트가 깨진다.
+  //
+  // 실패를 종류별로 가른다. 키가 없는 것, SDK 를 못 불러온 것(도메인 미등록·망),
+  // 좌표를 못 찾은 것은 고칠 사람이 다르다. 회색 빈 상자 하나로 뭉개면
+  // 무엇을 고쳐야 하는지 아무도 모른다.
+  const mapRef = useRef<HTMLDivElement>(null);
+  const [mapState, setMapState] = useState<MapState>({
+    status: 'idle',
+    plotted: [],
+    missed: [],
+  });
+  useEffect(() => {
+    if (!complete) return;
+    const 지역 = 희망지역();
+    if (!KAKAO_JS_KEY) {
+      setMapState({ status: 'nokey', plotted: [], missed: 지역 });
+      return;
+    }
+    let alive = true;
+    setMapState({ status: 'loading', plotted: [], missed: [] });
+    const fail = (message: string) => {
+      if (alive) setMapState({ status: 'error', message, plotted: [], missed: 지역 });
+    };
+
+    const ensureSdk = (): Promise<void> => {
+      if (window.kakao?.maps) return Promise.resolve();
+      return new Promise((resolve, reject) => {
+        const s = document.createElement('script');
+        s.src =
+          'https://dapi.kakao.com/v2/maps/sdk.js?appkey=' +
+          encodeURIComponent(KAKAO_JS_KEY) +
+          '&libraries=services&autoload=false';
+        s.async = true;
+        s.onload = () => resolve();
+        s.onerror = () => reject(new Error('sdk'));
+        document.head.appendChild(s);
+      });
+    };
+
+    const draw = () => {
+      const maps = window.kakao?.maps;
+      const el = mapRef.current;
+      if (!maps || !el || !alive) return;
+      const map = new maps.Map(el, {
+        center: new maps.LatLng(37.5665, 126.978), // 서울시청. 좌표가 오면 바로 옮긴다
+        level: 8,
+      });
+      if (!지역.length) {
+        setMapState({ status: 'ready', plotted: [], missed: [] });
+        return;
+      }
+      const geocoder = new maps.services.Geocoder();
+      const bounds = new maps.LatLngBounds();
+      const plotted: string[] = [];
+      const missed: string[] = [];
+      let sawError = false;
+      let pending = 지역.length;
+      지역.forEach((name, i) => {
+        geocoder.addressSearch(name, (result, status) => {
+          if (!alive) return;
+          if (status === maps.services.Status.OK && result[0]) {
+            const pos = new maps.LatLng(Number(result[0].y), Number(result[0].x));
+            new maps.Marker({ map, position: pos });
+            // 라벨은 HTML 문자열이 아니라 DOM 으로 만든다. name 은 우리 목록
+            // (lib/regions.ts) 에서 온 값이지만, 문자열 조립 습관을 두지 않는다.
+            const label = document.createElement('div');
+            label.className = 'map-rank';
+            label.textContent = `${i + 1}순위 · ${name}`;
+            new maps.CustomOverlay({ map, position: pos, content: label, yAnchor: 2.3 });
+            bounds.extend(pos);
+            plotted.push(name);
+          } else {
+            if (status === maps.services.Status.ERROR) sawError = true;
+            missed.push(name);
+          }
+          pending -= 1;
+          if (pending > 0) return;
+          if (plotted.length) {
+            map.setBounds(bounds);
+            if (plotted.length === 1) map.setLevel(7);
+            setMapState({ status: 'ready', plotted, missed });
+          } else {
+            fail(
+              sawError
+                ? '지도는 떴지만 좌표 검색이 거부됐습니다 — 카카오 개발자 사이트에서 이 도메인이 플랫폼(Web)에 등록돼 있는지 확인하십시오.'
+                : '희망 지역의 좌표를 찾지 못했습니다.',
+            );
+          }
+        });
+      });
+    };
+
+    const timer = window.setTimeout(
+      () => fail('지도를 불러오는 데 시간이 너무 걸립니다. 잠시 후 다시 열어 보십시오.'),
+      12000,
+    );
+    ensureSdk()
+      .then(
+        () =>
+          new Promise<void>((resolve) => {
+            window.kakao!.maps!.load(() => resolve());
+          }),
+      )
+      .then(draw)
+      .catch(() =>
+        fail(
+          '카카오 지도 SDK 를 불러오지 못했습니다 — JS 키가 맞는지, stores-scout.com 이 카카오 개발자 사이트의 플랫폼(Web)에 등록돼 있는지 확인하십시오.',
+        ),
+      )
+      .finally(() => window.clearTimeout(timer));
+    return () => {
+      alive = false;
+      window.clearTimeout(timer);
+    };
+  }, [complete]); // eslint-disable-line react-hooks/exhaustive-deps
+  // ── 지도 끝 ────────────────────────────────────────────────────────
 
   useEffect(() => {
     const script = document.createElement('script');
@@ -499,16 +667,75 @@ export default function ConsultationPage() {
               </p>
             </div>
           </section>
-          {/* 매물 조회는 서버가 있어야 한다. 이 사이트는 정적 배포라 서버가 없다 —
-              '준비 중' 이라고 적는다. 빈 목록을 보여 주면 '조건에 맞는 매물이 없다'
-              로 읽힌다. 없는 것과 아직 못 보는 것은 다르다. */}
-          <section className="workspace-card">
-            <h2>조건에 맞는 매물</h2>
-            <p className="planned">매물 연동 준비 중</p>
-            <p>
-              지금은 상담 조건을 정리해 파일로 내려받는 데까지 됩니다. 조건별 매매·임대
-              목록과 지도는 매물 공급처를 연결한 뒤 열립니다.
-            </p>
+          <section className="property-layout">
+            <div className="property-map-wrap">
+              <div ref={mapRef} className="property-map" aria-label="희망 지역 지도" />
+              {mapState.status !== 'ready' && (
+                <div className={`map-state map-state-${mapState.status}`} role="status">
+                  {mapState.status === 'loading' && <p>지도를 불러오는 중…</p>}
+                  {mapState.status === 'nokey' && (
+                    <>
+                      <p>
+                        <b>지도 키가 없습니다.</b>
+                      </p>
+                      <p>
+                        카카오 지도 JavaScript 키를 GitHub 저장소 변수{' '}
+                        <code>KAKAO_JS_KEY</code> 에 넣고 다시 배포하면 여기에 지도가
+                        뜹니다. 절차는 DEPLOY.md 「결과 화면 지도」.
+                      </p>
+                    </>
+                  )}
+                  {mapState.status === 'error' && (
+                    <>
+                      <p>
+                        <b>지도를 표시하지 못했습니다.</b>
+                      </p>
+                      <p>{mapState.message}</p>
+                    </>
+                  )}
+                </div>
+              )}
+              <p className="map-note">
+                지도: Kakao. 희망 지역(시·군·구)만 지도에 표시합니다. 고객명·연락처·
+                거주지·근무지는 지도에 보내지 않습니다.
+              </p>
+            </div>
+            <div>
+              <section className="workspace-card map-legend">
+                <h2>지도에 표시한 지역</h2>
+                {mapState.plotted.length === 0 && mapState.missed.length === 0 && (
+                  <p className="planned">희망 지역을 고르지 않았습니다</p>
+                )}
+                <ol>
+                  {form.areas
+                    .filter((a) => a.city && a.district)
+                    .map((a, i) => {
+                      const name = `${a.city} ${a.district}`;
+                      const on = mapState.plotted.includes(name);
+                      const off = mapState.missed.includes(name);
+                      return (
+                        <li key={name} className={on ? 'on' : off ? 'off' : ''}>
+                          <span className="rank-badge">{i + 1}순위</span> {name}
+                          {off && mapState.status === 'ready' && (
+                            <small> · 좌표를 찾지 못했습니다</small>
+                          )}
+                        </li>
+                      );
+                    })}
+                </ol>
+              </section>
+              {/* 매물 조회는 서버가 있어야 한다. 이 사이트는 정적 배포라 서버가 없다 —
+                  '준비 중' 이라고 적는다. 빈 목록을 보여 주면 '조건에 맞는 매물이 없다'
+                  로 읽힌다. 없는 것과 아직 못 보는 것은 다르다. */}
+              <section className="workspace-card">
+                <h2>조건에 맞는 매물</h2>
+                <p className="planned">매물 연동 준비 중</p>
+                <p>
+                  지금은 상담 조건을 정리해 파일로 내려받는 데까지 됩니다. 조건별
+                  매매·임대 목록은 매물 공급처를 연결한 뒤 이 지도 위에 올라옵니다.
+                </p>
+              </section>
+            </div>
           </section>
           <details className="workspace-card property-save">
             <summary>상담 내용 확인·저장·내려받기</summary>

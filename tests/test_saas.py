@@ -847,6 +847,39 @@ class TestFrontendBackendSplit(unittest.TestCase):
         cfg = (ROOT / "web" / "vite.config.ts").read_text(encoding="utf-8")
         self.assertIn("process.env.STORE_SCOUT_BASE || '/store-scout/'", cfg)
 
+    def test_지도에_개인정보를_보내지_않는다(self):
+        """결과 화면 지도는 카카오 서버가 그린다. 거기 보내는 것은 곧 바깥으로
+        나가는 것이다. 희망 지역(시·군·구)만 보내고, 고객명·전화번호·거주지·
+        근무지는 지도 코드 블록 안에 나타나면 안 된다."""
+        글 = self._상담화면()
+        시작 = 글.index("// ── 지도 시작")
+        끝 = 글.index("// ── 지도 끝")
+        블록 = "\n".join(l for l in 글[시작:끝].splitlines()
+                         if not l.lstrip().startswith("//"))
+        for 금지 in ("form.name", "form.phone", "form.home", "form.work",
+                   "고객명", "전화번호", "거주지", "근무지", "주소("):
+            self.assertNotIn(금지, 블록, f"지도 코드에 개인정보 '{금지}' 가 들어갑니다")
+        self.assertIn("희망지역()", 블록, "지도가 희망 지역을 안 쓰고 있습니다")
+
+    def test_지도_키는_빌드_변수로만_온다(self):
+        """키 문자열을 소스에 박으면 키를 바꿀 때마다 커밋이 필요하고, 옛 키가
+        이력에 남는다. 그리고 localStorage 는 이 화면에서 금지다."""
+        글 = self._상담화면()
+        self.assertIn("import.meta.env.VITE_KAKAO_JS_KEY", 글)
+        self.assertNotRegex(글, r"appkey=[0-9a-f]{20,}", "카카오 키가 소스에 박혀 있습니다")
+        wf = (ROOT / ".github" / "workflows" / "deploy-pages.yml").read_text(encoding="utf-8")
+        self.assertIn("VITE_KAKAO_JS_KEY: ${{ vars.KAKAO_JS_KEY }}", wf)
+        self.assertNotIn("secrets.KAKAO_JS_KEY", wf,
+                         "도메인 제한 JS 키는 Variables 에 둔다 — Secrets 에 두면 로그에서 가려져 디버깅만 어려워진다")
+
+    def test_지도_실패가_회색_상자로_뭉개지지_않는다(self):
+        """키 없음·SDK 실패·좌표 없음은 고칠 사람이 다르다. 셋 다 말로 구분돼야 한다."""
+        글 = self._상담화면()
+        for 상태 in ("'nokey'", "'error'", "'loading'", "'ready'"):
+            self.assertIn(상태, 글, f"지도 상태 {상태} 가 없습니다")
+        self.assertIn("지도 키가 없습니다", 글)
+        self.assertIn("플랫폼(Web)에 등록", 글)
+
     def test_가드_변수명이_ASCII다(self):
         """bash 는 비ASCII 변수명을 받지 않는다 — '금지=...' 는 command not found 로
         죽는다. 실제로 그렇게 썼다가 걸렸다. 가드가 죽으면 가드가 없는 것과 같다."""

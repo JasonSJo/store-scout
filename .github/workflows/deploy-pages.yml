@@ -17,6 +17,9 @@ name: 스스닷컴 공개 페이지
 # GitHub 는 Actions 배포에서 CNAME 파일을 읽지 않는다 — 도메인은 Settings → Pages
 # 에서 붙인다. 이 파일은 우리 쪽 스위치일 뿐이다. 순서와 절차는 DEPLOY.md 의
 # 「공개 페이지 도메인」 절에 있다. 순서를 어기면 몇 분 동안 사이트가 깨진다.
+#
+# 지도: 결과 화면의 카카오맵은 저장소 변수 KAKAO_JS_KEY 로 켠다.
+#   Settings → Secrets and variables → Actions → Variables. 절차는 DEPLOY.md.
 
 on:
   push:
@@ -78,11 +81,19 @@ jobs:
         working-directory: web
         run: npm run typecheck
 
+      # KAKAO_JS_KEY 는 저장소 Variables 에 둔다(Secrets 가 아니다 — 도메인 제한
+      # 키라 비밀이 아니고, 산출물 JS 에 그대로 들어간다). 없으면 빌드는 되고
+      # 결과 화면 지도가 '키 없음' 으로 뜬다. 조용히 빈 지도가 되지는 않는다.
       - name: Build
         working-directory: web
         env:
           STORE_SCOUT_BASE: ${{ steps.base.outputs.base }}
-        run: npm run build
+          VITE_KAKAO_JS_KEY: ${{ vars.KAKAO_JS_KEY }}
+        run: |
+          if [ -z "$VITE_KAKAO_JS_KEY" ]; then
+            echo "::warning::저장소 변수 KAKAO_JS_KEY 가 없습니다 — 결과 화면 지도가 '키 없음' 으로 뜹니다 (DEPLOY.md 「결과 화면 지도」)"
+          fi
+          npm run build
 
       - name: Assemble site
         run: |

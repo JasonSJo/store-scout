@@ -283,6 +283,62 @@ curl -sI https://jasonsjo.github.io/store-scout/  | head -1   # 301 → stores-s
 비운다. 그러면 `jasonsjo.github.io/store-scout/` 로 돌아간다. 순서는 반대로 —
 파일을 먼저 지워 base 를 `/store-scout/` 로 돌린 뒤 Settings 를 비운다.
 
+## 결과 화면 지도 — 카카오맵 JS 키
+
+상담 결과 화면은 카카오 지도 위에 희망 지역(1~3순위 시·군·구)을 찍는다.
+**고객명·연락처·거주지·근무지는 지도에 보내지 않는다** — 지도는 카카오 서버가
+그리는 것이라, 거기 보내는 것은 곧 바깥으로 나가는 것이다. 이 경계는
+`tests/test_saas.py` 의 `test_지도에_개인정보를_보내지_않는다` 가 지킨다.
+
+키가 없으면 빌드는 되고, 지도 자리에 "지도 키가 없습니다" 가 뜬다. 회색 빈 상자로
+뭉개지 않는다.
+
+### 1. 키 받기 — developers.kakao.com
+
+1. **내 애플리케이션 → 애플리케이션 추가하기.** 이름은 아무거나(스스닷컴).
+2. 만든 앱 → **앱 키** → **JavaScript 키** 를 복사한다. REST API 키가 아니다.
+3. 같은 앱 → **플랫폼 → Web → 사이트 도메인** 에 아래를 넣는다. **여기 없는 도메인에서는
+   키가 동작하지 않는다** — SDK 는 내려오고 좌표 검색만 조용히 ERROR 로 돌아온다.
+
+   ```
+   https://stores-scout.com
+   https://www.stores-scout.com
+   http://localhost:5173          ← 로컬 개발
+   ```
+
+JavaScript 키는 도메인 제한이 있어 공개 페이지의 JS 에 그대로 들어가도 된다.
+다른 도메인에서는 쓸 수 없다. REST API 키는 다르다 — 그건 서버에만 둔다.
+
+### 2. GitHub 저장소 변수에 넣기
+
+Settings → **Secrets and variables → Actions → Variables** 탭 → **New repository variable**
+
+| Name | Value |
+|---|---|
+| `KAKAO_JS_KEY` | 복사한 JavaScript 키 |
+
+Secrets 가 아니라 **Variables** 다. 비밀이 아닌 값을 Secrets 에 두면 로그에서
+가려져 디버깅만 어려워진다.
+
+### 3. 다시 배포
+
+`web/` 을 건드리는 push 가 있으면 저절로 돌고, 없으면 Actions → 「스스닷컴 공개
+페이지」 → **Run workflow**. 배포 로그의 Build 단계에 `KAKAO_JS_KEY 가 없습니다`
+경고가 안 뜨면 키가 들어간 것이다.
+
+### 확인
+
+결과 화면에서 지도가 뜨고 희망 지역에 핀이 찍히면 끝. 안 되면 화면의 문구를 본다:
+
+| 문구 | 원인 | 고칠 곳 |
+|---|---|---|
+| 지도 키가 없습니다 | 변수 미설정 또는 배포 전 | GitHub Variables → 재배포 |
+| SDK 를 불러오지 못했습니다 | 키 오타, 또는 망 차단 | 키 다시 복사 · 회사 망이면 dapi.kakao.com 허용 |
+| 좌표 검색이 거부됐습니다 | 도메인 미등록 | 카카오 → 플랫폼 → Web 에 도메인 추가 |
+| 좌표를 찾지 못했습니다 | 카카오가 그 행정구역명을 모름 | 드묾. 지역 목록(lib/regions.ts) 표기 확인 |
+
+로컬에서 보려면: `VITE_KAKAO_JS_KEY=키 npm run dev` (web/ 에서). `.env` 는 gitignore 다.
+
 ## 사내 서버 + Cloudflare Tunnel  ← 권장
 
 포트를 하나도 열지 않고 HTTPS 주소를 만든다. 터널이 **나가는 연결만** 쓰기 때문에
