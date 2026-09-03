@@ -309,40 +309,94 @@ export default function ConsultationPage() {
     setComplete(true);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   }
-  function download() {
-    const blob = new Blob(
-      [
-        JSON.stringify(
-          {
-            서비스: '스스닷컴',
-            작성시각: new Date().toISOString(),
-            고객명: form.name,
-            전화번호: form.phone,
-            거주지: form.home,
-            근무지: form.work,
-            희망지역: form.areas.filter((a) => a.district),
-            희망평수: form.size,
-            희망상권: form.market,
-            보증금만원: form.deposit,
-            권리금만원: form.premium,
-            매매총예산만원: form.saleBudget,
-            월세상한만원: form.monthlyRentMax,
-            투자금형태: form.funding,
-            운영형태: form.operation,
-          },
-          null,
-          2,
-        ),
-      ],
-      { type: 'application/json;charset=utf-8' },
-    );
+  // 상담 파일은 둘로 가른다.
+  //
+  //   상담카드.csv — 고객명·전화번호·거주지·근무지가 들어 있다. 상담사가 보관한다.
+  //   조건.csv     — 개인정보가 없다. 파이프라인(analysis/consult.py)이 읽는 키만 담는다.
+  //
+  // 한 파일로 내려주면 그 파일이 그대로 파이프라인에 들어가고, 그때 고객 연락처가
+  // 심의 자료로 넘어간다. 파이프라인이 읽는 키만 골라 쓰긴 하지만 — 애초에
+  // 들어가지 않는 것과, 들어갔다가 걸러지는 것은 다르다.
+  //
+  // 키 이름은 analysis/consult.py 의 읽는키 와 글자 그대로 같아야 한다.
+  // 다르면 파이프라인이 조용히 빈 값으로 읽고 필터가 아무것도 거르지 않는다.
+
+  function csvCell(value: string) {
+    // 쉼표·따옴표·줄바꿈이 든 칸만 감싼다. 감싼 칸 안의 따옴표는 겹따옴표로 쓴다.
+    return /[",\n\r]/.test(value) ? '"' + value.replace(/"/g, '""') + '"' : value;
+  }
+  function csv(rows: string[][]) {
+    // 맨 앞의 \ufeff 는 엑셀이 UTF-8 로 읽게 하는 표식이다. 없으면 한글이 깨진다.
+    // 줄 끝은 CRLF — 엑셀이 그것을 기대한다.
+    return '\ufeff' + rows.map((r) => r.map(csvCell).join(',')).join('\r\n') + '\r\n';
+  }
+  function save(name: string, text: string) {
+    const blob = new Blob([text], { type: 'text/csv;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = '스스닷컴_고객상담.json';
+    a.download = name;
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
+  function 주소(a: Address) {
+    return [a.main, a.detail].filter(Boolean).join(' ');
+  }
+  function 희망지역() {
+    return form.areas.filter((a) => a.city && a.district)
+      .map((a) => `${a.city} ${a.district}`);
+  }
+  function 스탬프() {
+    const d = new Date();
+    const p2 = (n: number) => String(n).padStart(2, '0');
+    return `${d.getFullYear()}${p2(d.getMonth() + 1)}${p2(d.getDate())}_${p2(d.getHours())}${p2(d.getMinutes())}`;
+  }
+
+  function 상담카드내려받기() {
+    const 지역 = 희망지역();
+    save(
+      `상담카드_${form.name || '무명'}_${스탬프()}.csv`,
+      csv([
+        ['항목', '값'],
+        ['작성시각', new Date().toISOString()],
+        ['고객명', form.name],
+        ['고객전화번호', form.phone],
+        ['거주지', 주소(form.home)],
+        ['근무지', 주소(form.work)],
+        ...지역.map((a, i) => [`희망지역_${i + 1}순위`, a]),
+        ['희망평수', form.size],
+        ['희망상권', form.market],
+        ['보증금_만원', form.deposit],
+        ['권리금_만원', form.premium],
+        ['매매총예산_만원', form.saleBudget],
+        ['월세상한_만원', form.monthlyRentMax],
+        ['투자금형태', form.funding],
+        ['운영형태', form.operation],
+      ]),
+    );
+  }
+
+  function 조건내려받기() {
+    // 이 파일 이름에는 고객명을 넣지 않는다 — 파일 이름도 개인정보다.
+    // 열 이름·차례는 analysis/consult.py 의 읽는키 그대로다.
+    // 목록 칸(희망지역·희망상권)은 · 로 잇는다 — 파이프라인이 목록을 찍을 때 쓰는 구분자다.
+    save(
+      `조건_${스탬프()}.csv`,
+      csv([
+        ['희망평수', '희망상권', '희망지역', '보증금_만원', '권리금_만원',
+          '투자금형태', '운영형태'],
+        [form.size, form.market, 희망지역().join('·'), form.deposit,
+          form.premium, form.funding, form.operation],
+      ]),
+    );
+  }
+
+  function download() {
+    상담카드내려받기();
+    // 브라우저가 연속된 두 개의 내려받기를 하나로 묶어 막는 일이 있다 — 사이를 띄운다.
+    setTimeout(조건내려받기, 400);
+  }
+
   function renderAddressFields({
     target,
     title,
@@ -473,12 +527,33 @@ export default function ConsultationPage() {
               </dd>
             </dl>
             <p>
-              입력하신 값은 서버로 나가지 않습니다. 이 파일이 유일한 기록입니다.
+              입력하신 값은 서버로 나가지 않습니다. 내려받은 파일이 유일한 기록입니다.
             </p>
-
-            <Button variant="outline" onClick={download}>
-              <Download size={16} /> 상담 파일 내려받기
-            </Button>
+            {/* 파일을 둘로 가른 이유를 화면에도 적는다. 적지 않으면 상담사가
+                둘 중 아무거나 넘기게 되고, 가른 것이 무의미해진다. */}
+            <dl className="download-guide">
+              <dt>상담카드</dt>
+              <dd>
+                고객명·전화번호·거주지·근무지가 들어 있습니다.{' '}
+                <b>상담사가 보관하고, 분석에는 넘기지 않습니다.</b>
+              </dd>
+              <dt>조건</dt>
+              <dd>
+                개인정보가 없습니다. 평수·상권·지역·투자금·운영형태만 담겨 있어{' '}
+                <b>이 파일만 분석에 넘깁니다.</b>
+              </dd>
+            </dl>
+            <div className="download-row">
+              <Button variant="outline" onClick={상담카드내려받기}>
+                <Download size={16} /> 상담카드 CSV
+              </Button>
+              <Button variant="outline" onClick={조건내려받기}>
+                <Download size={16} /> 조건 CSV
+              </Button>
+              <Button variant="outline" onClick={download}>
+                <Download size={16} /> 둘 다
+              </Button>
+            </div>
           </details>
         </main>
       </div>

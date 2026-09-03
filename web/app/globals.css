@@ -75,3 +75,12 @@
 .property-map-wrap{min-width:0;position:sticky;top:20px}.property-map{height:520px;width:100%;border-radius:12px;border:1px solid var(--border);z-index:0;background:#e9ecef}.property-map .leaflet-control-attribution{font-size:12px}.map-caption{font-size:13px;line-height:1.6;color:#665e57;margin-top:8px}
 .property-card{background:#fff;border:1px solid var(--border);padding:22px;border-radius:12px;margin-bottom:16px}.property-card.selected{border:2px solid var(--primary);box-shadow:0 4px 20px #ff6d2d12}.property-card h3{font-size:20px;margin:8px 0 12px}.property-card p{font-size:14px;line-height:1.7;margin:7px 0;color:#655a52}.property-card .property-price{color:var(--secondary);font-size:18px;font-weight:700}.property-note{white-space:pre-wrap;overflow-wrap:anywhere}.property-empty{padding:36px;background:#fff;border:1px dashed #d6cdc6;border-radius:12px;font-size:16px;line-height:1.8}.property-empty h3{font-size:20px}.property-save{margin-top:28px}.property-save summary{font-size:16px;font-weight:650;cursor:pointer}.property-editor{border:0;padding:0;margin:20px 0 36px}.property-editor>.field{margin:20px 0}.property-editor .property-map{height:360px}.property-editor .property-map-wrap{position:relative;top:0}.property-editor .field [data-slot=native-select-wrapper]{width:100%}.property-admin-list{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px}.workspace-tabs{flex-wrap:wrap}
 @media(max-width:900px){.property-layout,.property-condition-summary,.property-admin-list{grid-template-columns:1fr}.property-map-wrap{position:relative;top:0}.property-map{height:360px}.property-review-main{padding:24px 16px}.property-condition-summary{gap:16px}}
+
+/* 상담 파일 내려받기 — 상담카드(개인정보 있음)와 조건(없음)을 갈라 놓았다.
+   어느 파일이 어느 쪽인지 화면에서 읽히게 한다. */
+.download-guide{display:grid;grid-template-columns:76px minmax(0,1fr);gap:10px 14px;margin:18px 0 16px;padding:18px 20px;background:#faf8f3;border-radius:9px;font-size:13px;line-height:1.75}
+.download-guide dt{font-weight:650;color:#7c6b52}
+.download-guide dd{margin:0;color:#7a6d5c;overflow-wrap:anywhere}
+.download-guide b{font-weight:650;color:var(--secondary)}
+.download-row{display:flex;flex-wrap:wrap;gap:10px}
+@media(max-width:720px){.download-guide{grid-template-columns:1fr;gap:4px 0;padding:16px}.download-guide dd{margin-bottom:10px}.download-row [data-slot=button]{flex:1 1 100%}}

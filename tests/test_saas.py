@@ -11,8 +11,8 @@
 from __future__ import annotations
 
 import json
-import re
 import os
+import re
 import sys
 import tempfile
 import unittest
@@ -713,6 +713,69 @@ class TestFrontendBackendSplit(unittest.TestCase):
         for 금지 in ("fetch(", "XMLHttpRequest", "sendBeacon", "new WebSocket",
                    "localStorage", "sessionStorage"):
             self.assertNotIn(금지, 글, f"상담 화면에 {금지} 가 있습니다")
+
+    def test_조건파일이_파이프라인_키를_그대로_쓴다(self):
+        """상담 화면이 내려주는 조건 CSV 의 열 이름은 analysis/consult.py 의
+        읽는키 와 글자 그대로 같아야 한다.
+
+        다르면 아무 데서도 터지지 않는다 — consult.py 는 cond.get(키) 로 읽으므로
+        이름이 어긋난 칸은 그냥 빈 값이 되고, 필터가 아무것도 거르지 않은 채
+        후보지가 전부 심의에 올라온다. 조용히 틀리는 종류의 고장이라 테스트로 막는다."""
+        읽는키 = self._읽는키()
+        글 = self._상담화면()
+        열 = self._조건열(글)
+        self.assertEqual(
+            list(읽는키), 열,
+            "조건 CSV 의 열이 analysis/consult.py 의 읽는키 와 다릅니다\n"
+            f"  consult.py : {list(읽는키)}\n  상담 화면   : {열}")
+
+    def test_조건파일에_개인정보_키가_없다(self):
+        """조건 CSV 는 파이프라인에 넘기는 파일이다. 개인정보는 상담카드 쪽에만 있다.
+
+        consult.py 가 읽는 키만 골라 다시 쓰기는 하지만, 애초에 들어가지 않는 것과
+        들어갔다가 걸러지는 것은 다르다."""
+        블록 = self._조건블록()
+        for 키 in ("고객명", "고객전화번호", "거주지", "근무지",
+                  "form.name", "form.phone", "form.home", "form.work"):
+            self.assertNotIn(키, 블록,
+                             f"조건 CSV 를 만드는 자리에 개인정보 '{키}' 가 있습니다")
+
+    def test_조건파일_이름에_고객명이_없다(self):
+        """파일 이름도 개인정보다. 조건 파일은 사내에서 돌아다니므로 이름에
+        고객명을 넣지 않는다."""
+        블록 = self._조건블록()
+        이름줄 = [l for l in 블록.splitlines() if ".csv`" in l]
+        self.assertTrue(이름줄, "조건 CSV 의 파일 이름을 찾지 못했습니다")
+        for l in 이름줄:
+            self.assertNotIn("form.name", l,
+                             f"조건 CSV 파일 이름에 고객명이 들어갑니다: {l.strip()}")
+
+    def _상담화면(self) -> str:
+        return (ROOT / self.WEB / "app" / "consultation" / "page.tsx").read_text(
+            encoding="utf-8")
+
+    def _읽는키(self) -> tuple:
+        글 = (ROOT / "cafe-trade-area" / "analysis" / "consult.py").read_text(
+            encoding="utf-8")
+        m = re.search(r"읽는키 = \((.*?)\)", 글, re.S)
+        self.assertIsNotNone(m, "consult.py 에서 읽는키 를 찾지 못했습니다")
+        return tuple(re.findall(r'"([^"]+)"', m.group(1)))
+
+    def _조건블록(self) -> str:
+        """조건내려받기() 의 코드. 주석은 걷어낸다 — '고객명을 넣지 않는다' 라고
+        적어 둔 주석까지 위반으로 잡히면 설명을 못 쓰게 된다."""
+        글 = self._상담화면()
+        블록 = 글[글.index("function 조건내려받기"):]
+        블록 = 블록[:블록.index("\n  }")]
+        return "\n".join(l for l in 블록.splitlines()
+                         if not l.lstrip().startswith("//"))
+
+    def _조건열(self, 글: str) -> list:
+        """조건내려받기() 의 csv([...]) 첫 줄 = CSV 머리글."""
+        블록 = 글[글.index("function 조건내려받기"):]
+        시작 = 블록.index("csv([") + len("csv([")
+        머리 = 블록[시작:블록.index("]", 시작)]
+        return re.findall(r"'([^']+)'", 머리)
 
     def test_프론트에_서버_호출_흔적이_없다(self):
         """화면은 v7(Cloudflare Workers 백엔드)에서 가져왔다. 그쪽 화면은 자기 서버를
