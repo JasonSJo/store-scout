@@ -82,6 +82,20 @@ jobs:
         working-directory: web
         run: npm run test:map && npm run test:phone
 
+      - name: Validate Kakao Maps JavaScript key
+        env:
+          VITE_KAKAO_MAP_JS_KEY: ${{ secrets.KAKAO_MAP_JS_KEY }}
+        run: |
+          if [ -z "$VITE_KAKAO_MAP_JS_KEY" ]; then
+            echo "::error::Repository secret KAKAO_MAP_JS_KEY가 없거나 비어 있습니다"
+            exit 1
+          fi
+          if [ "${#VITE_KAKAO_MAP_JS_KEY}" -lt 20 ]; then
+            echo "::error::KAKAO_MAP_JS_KEY가 올바른 JavaScript 키 형식이 아닙니다"
+            exit 1
+          fi
+          echo "카카오맵 JavaScript 키 확인 완료 (값은 출력하지 않음)"
+
       - name: Build
         # JavaScript SDK 키만 전달. 서버 비밀키는 VITE_ 변수에 넣지 않습니다.
         working-directory: web
@@ -105,6 +119,12 @@ jobs:
           fi
           if [ "$BASE" = "/" ]; then
             test -s _site/CNAME || { echo "::error::CNAME 이 산출물에 없습니다"; exit 1; }
+          fi
+
+          # Vite가 키를 빌드에 실제 주입했는지 값 노출 없이 확인한다.
+          if ! grep -rq 'dapi.kakao.com/v2/maps/sdk.js' _site/assets/; then
+            echo "::error::빌드 산출물에 카카오맵 JavaScript SDK 로더가 없습니다"
+            exit 1
           fi
 
           # ── 여기부터 가드. 하나라도 걸리면 배포하지 않는다. ──────────────
