@@ -4,7 +4,7 @@ import { Button } from '@/components/ui/button';
 
 export default function Home() {
   return <div className="site-home">
-    <header className="site-header"><Link href="/" className="brand"><span className="brand-mark"><span className="brand-monogram" aria-hidden="true">스스</span></span><strong>스스닷컴<span>store scout</span></strong></Link><nav><a href="#how">서비스 소개</a><Link href="/consultation">상권분석</Link><a href="#data">데이터 안내</a></nav><span className="header-label">FOR FRANCHISE TEAMS <ArrowUpRight size={14}/></span></header>
+    <header className="site-header"><Link href="/" className="brand"><span className="brand-mark"><span className="brand-monogram" aria-hidden="true">스스</span></span><strong>스스닷컴<span>store scout</span></strong></Link><nav><a href="#how">서비스 소개</a><Link href="/consultation">상권분석</Link></nav><span className="header-label">FOR FRANCHISE TEAMS <ArrowUpRight size={14}/></span></header>
     <main>
       <section className="hero">
         <div className="hero-eyebrow"><span/> 좋은 매장의 시작, 정확한 상권에서</div>

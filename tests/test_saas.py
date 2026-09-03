@@ -714,6 +714,33 @@ class TestFrontendBackendSplit(unittest.TestCase):
                    "localStorage", "sessionStorage"):
             self.assertNotIn(금지, 글, f"상담 화면에 {금지} 가 있습니다")
 
+    def test_프론트에_서버_호출_흔적이_없다(self):
+        """화면은 v7(Cloudflare Workers 백엔드)에서 가져왔다. 그쪽 화면은 자기 서버를
+        부르며 살고, 이 배포에는 그 서버가 없다. 호출이 한 줄 딸려 오면 화면은
+        멀쩡히 뜨고 그 자리만 영원히 '불러오는 중' 이 된다 — 오류도 안 난다.
+
+        그리고 v7 의 인증은 헤더를 검증 없이 믿는다(oai-authenticated-*). 그 방식이
+        이쪽으로 따라 들어오면 누구나 아무 사용자가 된다."""
+        흔적 = ("client-api", "api/backend", "oai-authenticated",
+              "PropertyMatches", "SaveConsultation")
+        for f in self.프론트소스():
+            글 = f.read_text(encoding="utf-8", errors="replace")
+            for 말 in 흔적:
+                self.assertNotIn(말, 글,
+                                 f"{f.relative_to(ROOT)} 에 서버 의존 '{말}' 이 남아 있습니다")
+
+    def test_없는_화면으로_보내는_링크가_없다(self):
+        """/workspace 는 서버가 있어야 여는 화면이다. 이 배포에는 없다 —
+        링크를 남겨 두면 눌렀을 때 404 가 난다."""
+        없는곳 = ("/workspace", "/api/")
+        for f in self.프론트소스():
+            if f.suffix not in (".tsx", ".ts", ".html"):
+                continue
+            글 = f.read_text(encoding="utf-8", errors="replace")
+            for 길 in 없는곳:
+                self.assertNotIn(f'href="{길}', 글,
+                                 f"{f.relative_to(ROOT)} 가 없는 곳({길})으로 보냅니다")
+
     def test_배포가_백엔드를_올리지_않는다(self):
         """워크플로가 web/ 만 올리는가. 백엔드 경로가 산출물 조립에 끼면 안 된다."""
         wf = (ROOT / ".github" / "workflows" / "deploy-pages.yml").read_text(encoding="utf-8")
