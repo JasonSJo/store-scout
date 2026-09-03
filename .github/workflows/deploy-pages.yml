@@ -78,10 +78,16 @@ jobs:
         working-directory: web
         run: npm run typecheck
 
+      - name: Map loader tests
+        working-directory: web
+        run: npm run test:map && npm run test:phone
+
       - name: Build
+        # JavaScript SDK 키만 전달. 서버 비밀키는 VITE_ 변수에 넣지 않습니다.
         working-directory: web
         env:
           STORE_SCOUT_BASE: ${{ steps.base.outputs.base }}
+          VITE_KAKAO_MAP_JS_KEY: ${{ secrets.KAKAO_MAP_JS_KEY }}
         run: npm run build
 
       - name: Assemble site
