@@ -159,3 +159,164 @@ class TestFilter(unittest.TestCase):
         self.assertIn("판정 기준을 낮추면 안 됩니다", md)
 
 
+def _화면이_내는_조건csv(cond: dict) -> str:
+    """web/app/consultation/page.tsx 의 조건내려받기() 와 같은 바이트를 만든다 —
+    BOM · CRLF · 머리글은 읽는키 순서 · 목록은 · 로 잇는다."""
+    def cell(v):
+        v = "·".join(v) if isinstance(v, list) else str(v)
+        return '"' + v.replace('"', '""') + '"' if any(c in v for c in ',"\n\r') else v
+    head = list(CS.읽는키)
+    return "\ufeff" + ",".join(head) + "\r\n" + ",".join(cell(cond.get(k, "")) for k in head) + "\r\n"
+
+
+def _화면이_내는_상담카드csv(cond: dict, pii: dict) -> str:
+    rows = [("항목", "값"), ("작성시각", "2026-09-03T10:17:52.648Z")]
+    rows += [(k, pii[k]) for k in ("고객명", "고객전화번호", "거주지", "근무지")]
+    rows += [(f"희망지역_{i + 1}순위", a) for i, a in enumerate(cond["희망지역"])]
+    rows += [("희망평수", str(cond["희망평수"])), ("희망상권", "·".join(cond["희망상권"])),
+             ("보증금_만원", str(cond["보증금_만원"])), ("권리금_만원", str(cond["권리금_만원"])),
+             ("매매총예산_만원", "30000"), ("월세상한_만원", "350"),
+             ("투자금형태", cond["투자금형태"]), ("운영형태", cond["운영형태"])]
+    return "\ufeff" + "\r\n".join(",".join(r) for r in rows) + "\r\n"
+
+
+class TestCsvInput(unittest.TestCase):
+    """화면이 CSV 를 내리므로 파이프라인도 CSV 를 읽어야 한다.
+
+    여기서 지키는 것: 화면이 만든 바이트 그대로 넣었을 때 JSON 으로 넣은 것과
+    **같은 조건 dict** 가 나온다. 목록 칸이 문자열로 남으면 필터가 조용히
+    아무것도 거르지 않는다 — 그래서 목록으로 돌아오는지를 따로 본다."""
+
+    def _load(self, text: str) -> dict:
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "조건.csv"
+            src.write_text(text, encoding="utf-8", newline="")
+            return CS.load_consult(src)
+
+    def test_조건csv_가_JSON_과_같은_조건이_된다(self):
+        got = self._load(_화면이_내는_조건csv(COND))
+        self.assertEqual(got["희망지역"], COND["희망지역"])
+        self.assertEqual(got["희망상권"], COND["희망상권"])
+        self.assertEqual(got["투자금형태"], COND["투자금형태"])
+        self.assertEqual(got["운영형태"], COND["운영형태"])
+        for k in ("희망평수", "보증금_만원", "권리금_만원"):
+            self.assertEqual(CS.to_f(got[k]), float(COND[k]), k)
+        self.assertEqual(set(got), set(CS.읽는키))
+
+    def test_목록_칸이_목록으로_돌아온다(self):
+        """'서울특별시 강남구·경기도 고양시' 한 칸 → 두 원소. 문자열로 남으면
+        필터가 글자 하나하나를 지역으로 본다."""
+        got = self._load(_화면이_내는_조건csv({**COND, "희망지역": ["서울특별시 강남구", "경기도 고양시"]}))
+        self.assertEqual(got["희망지역"], ["서울특별시 강남구", "경기도 고양시"])
+        self.assertIsInstance(got["희망상권"], list)
+
+    def test_상권_하나만_골라도_목록이다(self):
+        """화면의 희망상권은 라디오라 하나만 온다. 원소 하나짜리 목록이어야 한다."""
+        got = self._load(_화면이_내는_조건csv({**COND, "희망상권": ["오피스"]}))
+        self.assertEqual(got["희망상권"], ["오피스"])
+
+    def test_빈_칸은_빈_값이다(self):
+        got = self._load(_화면이_내는_조건csv({**COND, "권리금_만원": "", "희망지역": []}))
+        self.assertEqual(got["희망지역"], [])
+        self.assertEqual(CS.to_f(got["권리금_만원"]), 0.0)
+
+    def test_쉼표와_따옴표가_든_칸도_읽힌다(self):
+        got = self._load(_화면이_내는_조건csv({**COND, "희망지역": ['성수 "A"동, 1층']}))
+        self.assertEqual(got["희망지역"], ['성수 "A"동, 1층'])
+
+    def test_CSV_로_끝까지_돈다(self):
+        """subprocess 로 실제 CLI. 필터가 실제로 거르는지까지 본다 —
+        희망평수 18 ±30% 밖의 후보지가 빠져야 한다."""
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "조건.csv"
+            src.write_text(_화면이_내는_조건csv(COND), encoding="utf-8", newline="")
+            r = subprocess.run(
+                [sys.executable, str(ROOT / "consult.py"), "--상담", str(src),
+                 "--outdir", str(Path(d) / "o")], capture_output=True, text=True, timeout=120)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertNotIn("개인정보", r.stdout, "조건.csv 에는 개인정보가 없어야 한다")
+            남은 = read_csv(Path(d) / "o" / "sites.csv")
+            전체 = read_csv(ROOT / "후보지.example.csv")
+            self.assertLess(len(남은), len(전체), "필터가 아무것도 거르지 않았다")
+            for s in 남은:
+                self.assertTrue(18 * 0.7 <= CS.to_f(s["전용면적_평"]) <= 18 * 1.3, s["전용면적_평"])
+            조건 = json.loads((Path(d) / "o" / "조건.json").read_text(encoding="utf-8"))
+            self.assertEqual(조건["희망지역"], COND["희망지역"])
+
+    def test_상담카드를_넣으면_경고하고_개인정보는_싣지_않는다(self):
+        """잘못된 파일을 넣는 실수는 난다. 그때 조용히 지나가면 고객 연락처가
+        심의 자료로 나간다."""
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "상담카드_홍길동.csv"
+            src.write_text(_화면이_내는_상담카드csv(COND, PII), encoding="utf-8", newline="")
+            cond = CS.load_consult(src)
+            self.assertEqual(cond["희망지역"], COND["희망지역"], "N순위 칸이 목록으로 모여야 한다")
+            self.assertEqual(cond["희망상권"], COND["희망상권"])
+            r = subprocess.run(
+                [sys.executable, str(ROOT / "consult.py"), "--상담", str(src),
+                 "--outdir", str(Path(d) / "o")], capture_output=True, text=True, timeout=120)
+            self.assertEqual(r.returncode, 0, r.stderr)
+            self.assertIn("개인정보", r.stdout)
+            for f in (Path(d) / "o").rglob("*"):
+                if f.is_file():
+                    text = f.read_text(encoding="utf-8-sig", errors="replace")
+                    for v in PII.values():
+                        self.assertNotIn(v, text, f"{f.name} 에 개인정보가 실렸습니다: {v}")
+
+    def test_JSON_은_여전히_읽힌다(self):
+        with tempfile.TemporaryDirectory() as d:
+            src = Path(d) / "상담.json"
+            src.write_text(json.dumps({"조건": COND}, ensure_ascii=False), encoding="utf-8")
+            self.assertEqual(CS.load_consult(src), COND)
+
+    def test_화면과_파이프라인의_열_이름이_같다(self):
+        """web/ 쪽 테스트(test_saas)도 같은 것을 지킨다. 여기서 한 번 더 —
+        이 저장소에서 analysis/ 만 따로 돌리는 사람도 있다."""
+        page = ROOT.parent.parent / "web" / "app" / "consultation" / "page.tsx"
+        if not page.exists():
+            self.skipTest("web/ 이 없는 체크아웃")
+        글 = page.read_text(encoding="utf-8")
+        블록 = 글[글.index("function 조건내려받기"):]
+        시작 = 블록.index("csv([") + len("csv([")
+        머리 = re.findall(r"'([^']+)'", 블록[시작:블록.index("]", 시작)])
+        self.assertEqual(머리, list(CS.읽는키))
+
+
+class TestRegionMatch(unittest.TestCase):
+    """화면은 시·도를 정식 명칭으로 보내고('서울특별시 강남구'), 후보지 주소는
+    사람이 줄여 적는다('서울 강남구 …'). 통째 포함으로 보면 전부 빠진다 —
+    브라우저가 실제로 내린 조건.csv 로 돌려 후보지 6곳이 6곳 다 빠지는 것을 봤다."""
+
+    def test_정식_시도명이_줄인_주소에_맞는다(self):
+        self.assertTrue(CS.지역맞음("서울특별시 강남구", "서울 강남구 강남대로 396"))
+        self.assertTrue(CS.지역맞음("서울특별시 강남구", "서울특별시 강남구 역삼동 1"))
+        self.assertTrue(CS.지역맞음("경기도 성남시", "경기 성남시 분당구 삼평동 682"))
+        self.assertTrue(CS.지역맞음("충청북도 청주시", "충북 청주시 흥덕구 1"))
+        self.assertTrue(CS.지역맞음("전북특별자치도 전주시", "전라북도 전주시 완산구 1"))
+
+    def test_구가_다르면_아니다(self):
+        self.assertFalse(CS.지역맞음("경기도 고양시", "경기 성남시 분당구 삼평동 682"))
+        self.assertFalse(CS.지역맞음("서울특별시 강남구", "서울 성동구 연무장길 42"))
+
+    def test_옛_한_낱말_지역도_그대로_된다(self):
+        self.assertTrue(CS.지역맞음("강남", "서울 강남구 강남대로 396"))
+        self.assertFalse(CS.지역맞음("강남", "서울 마포구 어울마당로 66"))
+
+    def test_빈_희망은_아무것도_안_맞는다(self):
+        self.assertFalse(CS.지역맞음("", "서울 강남구"))
+
+    def test_실제_화면_조건으로_강남역이_지역_사유로_빠지지_않는다(self):
+        cond = {"희망평수": "22", "희망상권": ["오피스"],
+                "희망지역": ["서울특별시 강남구", "경기도 고양시"],
+                "보증금_만원": "8000", "권리금_만원": "6000",
+                "투자금형태": "현금+대출+리스", "운영형태": "점주+알바"}
+        sites = read_csv(ROOT / "후보지.example.csv")
+        통과, 제외 = CS.필터(cond, sites, settings())
+        이름 = {s["후보지명"]: s for s in 통과 + 제외}
+        강남 = 이름["강남역 11번출구"]
+        self.assertNotIn("희망 지역", 강남.get("_제외사유", ""), 강남.get("_제외사유"))
+        for s in 제외:
+            if s["후보지명"] != "강남역 11번출구":
+                self.assertIn("희망 지역", s.get("_제외사유", ""),
+                              f"{s['후보지명']} 는 강남·고양이 아닌데 지역 사유가 없다")
+

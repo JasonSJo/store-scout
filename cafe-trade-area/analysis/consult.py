@@ -2,7 +2,8 @@
 """
 상담 조건 → 심의 입력
 
-상담 페이지(consult/)가 내보낸 `상담조건.json` 을 읽어 두 가지를 만든다.
+상담 페이지(web/consultation)가 내보낸 `조건.csv`(또는 옛 `상담조건.json`)를 읽어
+두 가지를 만든다.
 
     1. 설정 override — 운영 형태와 투자금 형태가 **고정비 F 를 바꾼다**.
        F 가 바뀌면 BEP 가 바뀌고 margin 이 바뀌고 판정이 바뀐다.
@@ -12,10 +13,11 @@
        이것은 알고리즘이 아니라 **필터**다. 걸러진 물건은 심의에 올라오지 않는다.
        점수를 깎는 게 아니라 목록에서 빼는 것이므로, 무엇이 왜 빠졌는지 남긴다.
 
-  python3 consult.py --상담 상담조건.json --sites 후보지.csv
+  python3 consult.py --상담 조건.csv --sites 후보지.csv
 
-⚠ **개인정보는 읽지 않는다.** 상담조건.json 의 고객명·전화번호는 이 도구가 손대지
-   않고 산출물에도 싣지 않는다. 심의표는 사내 회람 문서라 고객 연락처가 들어갈 자리가
+⚠ **개인정보는 읽지 않는다.** 화면은 개인정보를 상담카드.csv 에 따로 담아 내리고,
+   조건.csv 에는 넣지 않는다. 상담카드 쪽을 잘못 넣어도 이 도구는 고객명·전화번호를
+   산출물에 싣지 않고 경고만 낸다. 심의표는 사내 회람 문서라 고객 연락처가 들어갈 자리가
    아니다 — 상담 기록과 심의 자료는 분리해서 보관해야 한다.
 """
 from __future__ import annotations
@@ -32,7 +34,7 @@ from common import read_csv, to_f, write_json, write_text
 
 ROOT = Path(__file__).resolve().parent
 
-# 상담조건.json 에서 이 도구가 읽는 키. 개인정보 키는 의도적으로 빠져 있다.
+# 상담 파일에서 이 도구가 읽는 키. 화면의 조건.csv 머리글과 글자 그대로 같다. 개인정보 키는 의도적으로 빠져 있다.
 읽는키 = ("희망평수", "희망상권", "희망지역", "보증금_만원", "권리금_만원",
         "투자금형태", "운영형태")
 개인정보키 = ("고객명", "고객전화번호", "거주지", "근무지")
@@ -40,12 +42,67 @@ ROOT = Path(__file__).resolve().parent
 상권유형 = ("오피스", "주거", "학교", "병원", "메인", "복합")
 
 
+# CSV 한 칸에 목록을 담을 때 쓰는 구분자. 화면(web/app/consultation/page.tsx)이
+# 희망지역·희망상권을 이걸로 잇고, 상담반영.md 가 목록을 찍을 때도 이걸 쓴다.
+목록구분자 = "·"
+목록키 = ("희망지역", "희망상권")
+
+
 def load_consult(path) -> dict:
+    """상담 파일을 읽는다. JSON 과 CSV 둘 다 받는다.
+
+    JSON — 옛 화면이 내던 형식. {"조건": {...}} 이거나 조건 dict 그 자체.
+    CSV  — 지금 화면(web/)이 내는 형식. 두 모양이 온다.
+             · 조건.csv     머리글 한 줄 + 값 한 줄. 열 이름은 읽는키 그대로.
+             · 상담카드.csv  '항목,값' 두 열 세로 표. 개인정보가 들어 있다 —
+                            읽기는 하되 main() 이 경고하고 산출물에는 싣지 않는다.
+           목록 칸(희망지역·희망상권)은 · 로 이어져 있으므로 다시 가른다.
+
+    형식은 내용으로 가린다. 확장자는 사람이 바꿔 저장하면서 쉽게 어긋난다.
+    """
     p = Path(path)
     if not p.exists():
         return {}
-    doc = json.loads(p.read_text(encoding="utf-8-sig"))
-    return doc.get("조건", doc)
+    text = p.read_text(encoding="utf-8-sig")
+    if text.lstrip()[:1] in ("{", "["):
+        doc = json.loads(text)
+        return doc.get("조건", doc)
+    return _csv_to_cond(text)
+
+
+def _csv_to_cond(text: str) -> dict:
+    rows = [r for r in csv.reader(text.splitlines()) if any(c.strip() for c in r)]
+    if not rows:
+        return {}
+    head = [c.strip() for c in rows[0]]
+
+    if head[:2] == ["항목", "값"]:
+        # 상담카드 — 세로 표. 희망지역_1순위·_2순위… 는 희망지역 목록으로 모은다.
+        cond: dict = {}
+        지역: list[tuple[int, str]] = []
+        for r in rows[1:]:
+            k = r[0].strip() if r else ""
+            v = r[1].strip() if len(r) > 1 else ""
+            if not k:
+                continue
+            if k.startswith("희망지역_") and k.endswith("순위"):
+                순위 = to_f(k[len("희망지역_"):-len("순위")], 99)
+                지역.append((순위, v))
+            else:
+                cond[k] = v
+        if 지역:
+            cond["희망지역"] = [v for _, v in sorted(지역) if v]
+    else:
+        # 조건.csv — 가로 표. 값 줄이 둘 이상이면 첫 줄만 쓴다. 상담은 한 건이다.
+        vals = rows[1] if len(rows) > 1 else []
+        cond = {k: (vals[i].strip() if i < len(vals) else "")
+                for i, k in enumerate(head) if k}
+
+    for k in 목록키:
+        v = cond.get(k)
+        if isinstance(v, str):
+            cond[k] = [x.strip() for x in v.split(목록구분자) if x.strip()]
+    return cond
 
 
 def 금융비용(cond: dict, settings: dict) -> dict:
@@ -112,6 +169,40 @@ def apply_settings(cond: dict, settings: dict) -> tuple[dict, list[str]]:
     return out, 바뀐
 
 
+# 화면(web/lib/regions.ts)은 시·도를 정식 명칭으로 쓴다 — '서울특별시', '경기도'.
+# 후보지 주소는 사람이 적으므로 '서울 강남구', '경기 성남시' 처럼 줄여 쓰는 일이 많다.
+# 둘 중 어느 쪽이 와도 맞도록 시·도마다 통용 표기를 둔다.
+시도표기 = {
+    "서울특별시": ("서울",), "부산광역시": ("부산",), "대구광역시": ("대구",),
+    "인천광역시": ("인천",), "광주광역시": ("광주",), "대전광역시": ("대전",),
+    "울산광역시": ("울산",), "세종특별자치시": ("세종",), "경기도": ("경기",),
+    "강원특별자치도": ("강원",), "충청북도": ("충북",), "충청남도": ("충남",),
+    "전북특별자치도": ("전북", "전라북도"), "전라남도": ("전남",),
+    "경상북도": ("경북",), "경상남도": ("경남",), "제주특별자치도": ("제주",),
+}
+
+
+def 지역맞음(희망: str, 주소: str) -> bool:
+    """희망 지역 한 항목이 후보지 주소에 해당하는가.
+
+    통째 문자열 포함으로 보면 '서울특별시 강남구' 가 '서울 강남구 강남대로 396' 에
+    걸리지 않는다 — 실제로 그렇게 후보지 전부가 빠진 적이 있다. 그래서 낱말마다
+    본다. 낱말 전부가 주소에 있어야 맞는 것이고, 시·도 낱말은 통용 표기도 인정한다.
+
+        '서울특별시 강남구' → 서울|서울특별시 있고, 강남구 있으면 맞음
+        '경기도 고양시'     → 경기 있어도 고양시 없으면 아님
+        '강남'              → 옛 JSON 식 한 낱말. 그대로 포함 검사
+    """
+    낱말 = 희망.split()
+    if not 낱말:
+        return False
+    for w in 낱말:
+        후보 = (w,) + 시도표기.get(w, ())
+        if not any(x in 주소 for x in 후보):
+            return False
+    return True
+
+
 def 필터(cond: dict, sites: list[dict], settings: dict) -> tuple[list[dict], list[dict]]:
     """희망 조건으로 후보지를 거른다. 뺀 이유를 행마다 남긴다."""
     f = settings.get("상담필터") or {}
@@ -136,7 +227,7 @@ def 필터(cond: dict, sites: list[dict], settings: dict) -> tuple[list[dict], l
             이유.append(f"보증금+권리금 {투자:,.0f}만원이 한도 {한도:,.0f}만원 초과")
         if 지역:
             주소 = str(s.get("주소") or "") + " " + str(s.get("후보지명") or "")
-            if not any(g in 주소 for g in 지역):
+            if not any(지역맞음(g, 주소) for g in 지역):
                 이유.append(f"희망 지역({'·'.join(지역)})에 해당하지 않음")
         if 상권:
             유형 = str(s.get("상권유형") or "").strip()
@@ -196,7 +287,7 @@ def render(cond: dict, settings: dict, 바뀐: list[str],
 
 def main() -> int:
     ap = argparse.ArgumentParser(description="상담 조건을 심의 입력으로 옮긴다")
-    ap.add_argument("--상담", dest="상담", required=True, help="상담 페이지가 내보낸 JSON")
+    ap.add_argument("--상담", dest="상담", required=True, help="상담 페이지가 내보낸 조건.csv (옛 JSON 도 됨)")
     ap.add_argument("--sites", default=str(ROOT / "후보지.example.csv"))
     ap.add_argument("--settings", default=str(ROOT / "설정.example.yaml"))
     ap.add_argument("--outdir", default=str(ROOT / "output" / "consult"))
@@ -231,7 +322,7 @@ def main() -> int:
     for x in 바뀐:
         print(f"  · {x}")
     if 남은:
-        print(f"  🙋 상담 JSON 에 개인정보 {len(남은)}건({', '.join(남은)})이 있습니다 — "
+        print(f"  🙋 상담 파일에 개인정보 {len(남은)}건({', '.join(남은)})이 있습니다 — "
               f"산출물에는 싣지 않았습니다.")
     print(f"  → {out}/sites.csv · 설정.yaml · 상담반영.md")
     print(f"  다음: python3 review_sites.py --sites {out}/sites.csv "
