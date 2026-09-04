@@ -101,6 +101,60 @@ jobs:
             flyctl volumes create "$VOL" --size 1 --region "$REGION" --app "$APP" --yes
           fi
 
+      # GitHub Repository secrets는 Fly 앱으로 자동 전달되지 않는다. 배포 직전에
+      # 값이 모두 있는지 검사하고 stdin으로 넘겨 명령 인자와 로그에 키를 남기지 않는다.
+      # --stage로 지금 실행 중인 기계를 따로 재시작하지 않고, 바로 다음 배포에서
+      # 새 코드와 키를 한 번에 적용한다.
+      - name: 소상공인365 API 키 동기화
+        if: ${{ !inputs.dry_run }}
+        shell: bash
+        env:
+          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          SBIZ_STARTUP_PUBLIC_CERT_KEY: ${{ secrets.SBIZ_STARTUP_PUBLIC_CERT_KEY }}
+          SBIZ_HP_REPORT_CERT_KEY: ${{ secrets.SBIZ_HP_REPORT_CERT_KEY }}
+          SBIZ_WEATHER_CERT_KEY: ${{ secrets.SBIZ_WEATHER_CERT_KEY }}
+          SBIZ_SALES_INDEX_CERT_KEY: ${{ secrets.SBIZ_SALES_INDEX_CERT_KEY }}
+          SBIZ_STORE_STATUS_CERT_KEY: ${{ secrets.SBIZ_STORE_STATUS_CERT_KEY }}
+          SBIZ_STORE_CAREER_CERT_KEY: ${{ secrets.SBIZ_STORE_CAREER_CERT_KEY }}
+          SBIZ_DETAIL_CERT_KEY: ${{ secrets.SBIZ_DETAIL_CERT_KEY }}
+          SBIZ_DELIVERY_CERT_KEY: ${{ secrets.SBIZ_DELIVERY_CERT_KEY }}
+          SBIZ_TOUR_CERT_KEY: ${{ secrets.SBIZ_TOUR_CERT_KEY }}
+          SBIZ_SIMPLE_CERT_KEY: ${{ secrets.SBIZ_SIMPLE_CERT_KEY }}
+          SBIZ_SNS_CERT_KEY: ${{ secrets.SBIZ_SNS_CERT_KEY }}
+        run: |
+          set -euo pipefail
+
+          required=(
+            SBIZ_STARTUP_PUBLIC_CERT_KEY
+            SBIZ_HP_REPORT_CERT_KEY
+            SBIZ_WEATHER_CERT_KEY
+            SBIZ_SALES_INDEX_CERT_KEY
+            SBIZ_STORE_STATUS_CERT_KEY
+            SBIZ_STORE_CAREER_CERT_KEY
+            SBIZ_DETAIL_CERT_KEY
+            SBIZ_DELIVERY_CERT_KEY
+            SBIZ_TOUR_CERT_KEY
+            SBIZ_SIMPLE_CERT_KEY
+            SBIZ_SNS_CERT_KEY
+          )
+
+          for key in "${required[@]}"; do
+            if [ -z "${!key:-}" ]; then
+              echo "::error::GitHub Repository secret $key가 없거나 비어 있습니다."
+              exit 1
+            fi
+          done
+
+          APP=$(python3 -c "import tomllib;print(tomllib.load(open('fly.toml','rb'))['app'])")
+          {
+            for key in "${required[@]}"; do
+              printf '%s=%s\n' "$key" "${!key}"
+            done
+          } | flyctl secrets import --stage --app "$APP"
+
+          echo "소상공인365 API 키 11개를 Fly.io에 등록했습니다 (값은 출력하지 않음)."
+          flyctl secrets list --app "$APP"
+
       - name: 배포
         if: ${{ !inputs.dry_run }}
         env:

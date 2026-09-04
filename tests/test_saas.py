@@ -1253,6 +1253,29 @@ class TestDeployment(unittest.TestCase):
         self.assertEqual(모르는것, set(),
                          f"앱이 읽지 않는 환경변수를 배포 설정이 적습니다: {sorted(모르는것)}")
 
+    def test_소상공인365_키를_Fly_배포에_전부_연결한다(self):
+        """Repository secrets는 Fly 앱에 자동으로 들어가지 않는다. 하나라도 연결에서
+        빠지면 배포는 성공해도 그 API만 운영에서 조용히 인증 실패한다."""
+        import re as _re
+        wf = (ROOT / ".github/workflows/deploy-fly.yml").read_text(encoding="utf-8")
+        기대 = {
+            "SBIZ_STARTUP_PUBLIC_CERT_KEY",
+            "SBIZ_HP_REPORT_CERT_KEY",
+            "SBIZ_WEATHER_CERT_KEY",
+            "SBIZ_SALES_INDEX_CERT_KEY",
+            "SBIZ_STORE_STATUS_CERT_KEY",
+            "SBIZ_STORE_CAREER_CERT_KEY",
+            "SBIZ_DETAIL_CERT_KEY",
+            "SBIZ_DELIVERY_CERT_KEY",
+            "SBIZ_TOUR_CERT_KEY",
+            "SBIZ_SIMPLE_CERT_KEY",
+            "SBIZ_SNS_CERT_KEY",
+        }
+        연결 = set(_re.findall(r"secrets\.(SBIZ_[A-Z0-9_]+)", wf))
+        self.assertEqual(연결, 기대)
+        self.assertIn('flyctl secrets import --stage --app "$APP"', wf)
+        self.assertNotIn("VITE_SBIZ_", wf)  # 서버 키를 공개 프론트 빌드에 넣지 않는다
+
     def test_볼륨을_두_번_만들지_않는다(self):
         """볼륨이 둘이 되면 기계가 어느 쪽을 붙일지 알 수 없다. 붙지 않은 쪽의
         조직 데이터는 사라진 것처럼 보이고, 화면은 멀쩡하며 DB 만 비어 있다."""
