@@ -104,6 +104,17 @@ jobs:
           VITE_KAKAO_MAP_JS_KEY: ${{ secrets.KAKAO_MAP_JS_KEY }}
         run: npm run build
 
+      - name: Verify Kakao Maps key injection
+        working-directory: web
+        env:
+          VITE_KAKAO_MAP_JS_KEY: ${{ secrets.KAKAO_MAP_JS_KEY }}
+        run: |
+          if ! grep -rqlF -- "$VITE_KAKAO_MAP_JS_KEY" dist/assets/; then
+            echo "::error::Vite 빌드 산출물에 KAKAO_MAP_JS_KEY가 주입되지 않았습니다"
+            exit 1
+          fi
+          echo "카카오맵 키 빌드 주입 확인 완료 (값은 출력하지 않음)"
+
       - name: Assemble site
         run: |
           mv web/dist _site
