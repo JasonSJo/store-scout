@@ -481,9 +481,30 @@ docker compose exec app python3 -m server.bootstrap --org "조직명" --email yo
 | `STORE_SCOUT_PIPELINE` | 알고리즘 디렉터리 | 이미지가 `/opt/pipeline/...` 로 설정해 둔다 |
 | `STORE_SCOUT_PIPELINE_REV` | 그 알고리즘의 커밋 | 빌드가 주입. `/healthz` 에 나온다 |
 | `STORE_SCOUT_TIMEOUT` | 파이프라인 제한 시간(초) | 후보지가 많으면 `900` 이상 |
+| `SBIZ_*_CERT_KEY` | 소상공인365 API 11종 인증키 | `.env` 또는 Fly Secret에만 저장. 프론트엔드 금지 |
 
-비밀 키는 없습니다. 비밀번호는 PBKDF2 해시로만 저장하고 세션 토큰은 DB 에 있어,
-유출될 서명 키가 존재하지 않습니다.
+애플리케이션 자체 서명 키는 없습니다. 비밀번호는 PBKDF2 해시로만 저장하고 세션
+토큰은 DB 에 있습니다. 외부 API 인증키는 `.env` 또는 배포 플랫폼의 Secret으로만
+관리하며 채팅·이슈·커밋·`VITE_` 변수에 넣지 않습니다.
+
+소상공인365 키를 Fly.io에 넣을 때는 재발급한 값을 로컬 환경변수로 준비한 뒤 다음
+이름 그대로 Secret을 등록합니다. 명령 기록에 실제 값을 직접 적지 마십시오.
+
+```bash
+fly secrets set \
+  SBIZ_STARTUP_PUBLIC_CERT_KEY="$SBIZ_STARTUP_PUBLIC_CERT_KEY" \
+  SBIZ_HP_REPORT_CERT_KEY="$SBIZ_HP_REPORT_CERT_KEY" \
+  SBIZ_WEATHER_CERT_KEY="$SBIZ_WEATHER_CERT_KEY" \
+  SBIZ_SALES_INDEX_CERT_KEY="$SBIZ_SALES_INDEX_CERT_KEY" \
+  SBIZ_STORE_STATUS_CERT_KEY="$SBIZ_STORE_STATUS_CERT_KEY" \
+  SBIZ_STORE_CAREER_CERT_KEY="$SBIZ_STORE_CAREER_CERT_KEY" \
+  SBIZ_DETAIL_CERT_KEY="$SBIZ_DETAIL_CERT_KEY" \
+  SBIZ_DELIVERY_CERT_KEY="$SBIZ_DELIVERY_CERT_KEY" \
+  SBIZ_TOUR_CERT_KEY="$SBIZ_TOUR_CERT_KEY" \
+  SBIZ_SIMPLE_CERT_KEY="$SBIZ_SIMPLE_CERT_KEY" \
+  SBIZ_SNS_CERT_KEY="$SBIZ_SNS_CERT_KEY" \
+  --app store-scout
+```
 
 ## 백업과 복구
 
